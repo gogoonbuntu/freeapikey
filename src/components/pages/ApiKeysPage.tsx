@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getApiKeys, addApiKey, updateApiKey, deleteApiKey } from '@/lib/firestore';
 import { ApiKey, AIProvider, PROVIDER_CONFIG } from '@/lib/types';
-import { Plus, Edit2, Trash2, Eye, EyeOff, Key, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, EyeOff, Key, AlertTriangle, Terminal, Check, Copy, Play } from 'lucide-react';
 
 export default function ApiKeysPage() {
     const { user } = useAuth();
@@ -13,6 +13,8 @@ export default function ApiKeysPage() {
     const [showModal, setShowModal] = useState(false);
     const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
     const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+    const [showTestModal, setShowTestModal] = useState(false);
+    const [testingKey, setTestingKey] = useState<ApiKey | null>(null);
 
     // Form state
     const [formProvider, setFormProvider] = useState<AIProvider>('gemini');
@@ -130,9 +132,13 @@ export default function ApiKeysPage() {
 
     const groupedKeys: Record<string, ApiKey[]> = {};
     keys.forEach(k => {
-        if (!groupedKeys[k.provider]) groupedKeys[k.provider] = [];
         groupedKeys[k.provider].push(k);
     });
+
+    const openTest = (key: ApiKey) => {
+        setTestingKey(key);
+        setShowTestModal(true);
+    };
 
     return (
         <div>
@@ -222,6 +228,9 @@ export default function ApiKeysPage() {
                                             </div>
                                         </div>
                                         <div style={{ display: 'flex', gap: 4 }}>
+                                            <button className="btn-icon" onClick={() => openTest(key)} title="테스트">
+                                                <Terminal size={14} />
+                                            </button>
                                             <button className="btn-icon" onClick={() => openEdit(key)}>
                                                 <Edit2 size={14} />
                                             </button>
@@ -335,6 +344,171 @@ export default function ApiKeysPage() {
                     </div>
                 </div>
             )}
+
+            {/* Test Curl Modal */}
+            {showTestModal && testingKey && (
+                <TestCurlModal
+                    apiKey={testingKey}
+                    onClose={() => setShowTestModal(false)}
+                />
+            )}
+        </div>
+    );
+}
+
+function TestCurlModal({ apiKey, onClose }: { apiKey: ApiKey; onClose: () => void }) {
+    const [copied, setCopied] = useState(false);
+    const [testResult, setTestResult] = useState<{ status: 'idle' | 'loading' | 'success' | 'error'; data?: any; error?: string }>({ status: 'idle' });
+
+    const getCurlCommand = () => {
+        const baseUrl = apiKey.provider === 'gemini'
+            ? `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_CONFIG[apiKey.provider].models[0]}:generateContent?key=${apiKey.key}`
+            : apiKey.provider === 'groq'
+                ? 'https://api.groq.com/openai/v1/chat/completions'
+                : 'https://api.cerebras.ai/v1/chat/completions';
+
+        if (apiKey.provider === 'gemini') {
+            return `curl "${baseUrl}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "contents": [{ "parts": [{ "text": "Hello, how are you?" }] }]
+  }'`;
+        }
+
+        return `curl "${baseUrl}" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${apiKey.key}" \\
+  -d '{
+    "model": "${PROVIDER_CONFIG[apiKey.provider].models[0]}",
+    "messages": [{ "role": "user", "content": "Hello, how are you?" }]
+  }'`;
+    };
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(getCurlCommand());
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const runTest = async () => {
+        setTestResult({ status: 'loading' });
+        try {
+            const url = apiKey.provider === 'gemini'
+                ? `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_CONFIG[apiKey.provider].models[0]}:generateContent?key=${apiKey.key}`
+                : apiKey.provider === 'groq'
+                    ? 'https://api.groq.com/openai/v1/chat/completions'
+                    : 'https://api.cerebras.ai/v1/chat/completions';
+
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (apiKey.provider !== 'gemini') {
+                headers['Authorization'] = `Bearer ${apiKey.key}`;
+            }
+
+            const body = apiKey.provider === 'gemini'
+                ? { contents: [{ parts: [{ text: 'Hello, how are you?' }] }] }
+                : {
+                    model: PROVIDER_CONFIG[apiKey.provider].models[0],
+                    messages: [{ role: 'user', content: 'Hello, how are you?' }]
+                };
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body)
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                setTestResult({ status: 'success', data });
+            } else {
+                setTestResult({ status: 'error', error: data.error?.message || JSON.stringify(data) });
+            }
+        } catch (err) {
+            setTestResult({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' });
+        }
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Terminal size={18} color="var(--accent-blue)" />
+                        <h3>API 키 테스트 (Curl)</h3>
+                    </div>
+                    <button className="btn-icon" onClick={onClose}>✕</button>
+                </div>
+
+                <div style={{ padding: '0 20px 20px' }}>
+                    <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+                            <span>Curl 명령어</span>
+                            <button className="btn-text" onClick={handleCopy} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                {copied ? <Check size={12} /> : <Copy size={12} />}
+                                {copied ? '복사됨' : '복사'}
+                            </button>
+                        </div>
+                        <pre style={{
+                            background: 'var(--bg-secondary)',
+                            padding: 12,
+                            borderRadius: 8,
+                            fontSize: 12,
+                            overflowX: 'auto',
+                            border: '1px solid var(--border-color)',
+                            fontFamily: 'monospace',
+                            color: 'var(--text-secondary)'
+                        }}>
+                            {getCurlCommand()}
+                        </pre>
+                    </div>
+
+                    <div style={{ marginBottom: 16 }}>
+                        <button
+                            className="btn btn-primary"
+                            onClick={runTest}
+                            disabled={testResult.status === 'loading'}
+                            style={{ width: '100%', justifyContent: 'center' }}
+                        >
+                            {testResult.status === 'loading' ? <div className="spinner" /> : <Play size={14} />}
+                            {testResult.status === 'loading' ? '테스트 중...' : '라이브 테스트 실행'}
+                        </button>
+                    </div>
+
+                    {testResult.status !== 'idle' && (
+                        <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>결과</div>
+                            <div style={{
+                                background: testResult.status === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                                padding: 12,
+                                borderRadius: 8,
+                                border: `1px solid ${testResult.status === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`,
+                                fontSize: 12,
+                                maxHeight: 200,
+                                overflowY: 'auto'
+                            }}>
+                                {testResult.status === 'loading' ? (
+                                    <div style={{ color: 'var(--text-tertiary)' }}>요청을 보내는 중...</div>
+                                ) : testResult.status === 'error' ? (
+                                    <div style={{ color: 'var(--accent-red)' }}>
+                                        <strong>오류:</strong> {testResult.error}
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <div style={{ color: 'var(--accent-green)', fontWeight: 600, marginBottom: 4 }}>✅ 성공!</div>
+                                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                                            {JSON.stringify(testResult.data, null, 2)}
+                                        </pre>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="modal-footer">
+                    <button className="btn btn-secondary" onClick={onClose} style={{ width: '100%' }}>닫기</button>
+                </div>
+            </div>
         </div>
     );
 }
