@@ -122,7 +122,7 @@ export default function PlaygroundPage() {
                 date: today,
                 requestCount: 1,
                 tokenCount: result.totalTokens,
-                projectId: projectId || undefined,
+                ...(projectId ? { projectId } : {}),
             });
 
         } catch (err: unknown) {
