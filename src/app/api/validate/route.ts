@@ -24,14 +24,16 @@ export async function POST(req: NextRequest) {
             headers['Authorization'] = `Bearer ${trimmedKey}`;
             body = {
                 model: selectedModel,
-                messages: [{ role: 'user', content: 'Ping' }]
+                messages: [{ role: 'user', content: 'Hello' }],
+                max_tokens: 10
             };
         } else if (provider === 'cerebras') {
             url = 'https://api.cerebras.ai/v1/chat/completions';
             headers['Authorization'] = `Bearer ${trimmedKey}`;
             body = {
                 model: selectedModel,
-                messages: [{ role: 'user', content: 'Ping' }]
+                messages: [{ role: 'user', content: 'Hello' }],
+                max_tokens: 10
             };
         } else {
             return NextResponse.json({ error: { message: 'Unsupported provider' } }, { status: 400 });
