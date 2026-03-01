@@ -15,6 +15,8 @@ export default function ApiKeysPage() {
     const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
     const [showTestModal, setShowTestModal] = useState(false);
     const [testingKey, setTestingKey] = useState<ApiKey | null>(null);
+    const [isValidating, setIsValidating] = useState(false);
+    const [modalError, setModalError] = useState('');
 
     // Form state
     const [formProvider, setFormProvider] = useState<AIProvider>('gemini');
@@ -63,6 +65,7 @@ export default function ApiKeysPage() {
         setFormRPM(String(defaults.rpm || ''));
         setFormRPD(String(defaults.rpd || ''));
         setFormTPD(String(defaults.tpd || defaults.dailyTokenLimit || ''));
+        setModalError('');
         setShowModal(true);
     };
 
@@ -74,6 +77,7 @@ export default function ApiKeysPage() {
         setFormRPM(String(key.limits.rpm || ''));
         setFormRPD(String(key.limits.rpd || ''));
         setFormTPD(String(key.limits.tpd || key.limits.dailyTokenLimit || ''));
+        setModalError('');
         setShowModal(true);
     };
 
@@ -89,13 +93,49 @@ export default function ApiKeysPage() {
 
     const handleSave = async () => {
         if (!user || !formKey.trim()) return;
-        const limits = {
-            rpm: formRPM ? parseInt(formRPM) : undefined,
-            rpd: formRPD ? parseInt(formRPD) : undefined,
-            tpd: formTPD ? parseInt(formTPD) : undefined,
-        };
+
+        setIsValidating(true);
+        setModalError('');
 
         try {
+            // Validate the key before saving
+            const url = formProvider === 'gemini'
+                ? `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_CONFIG[formProvider].models[0]}:generateContent?key=${formKey}`
+                : formProvider === 'groq'
+                    ? 'https://api.groq.com/openai/v1/chat/completions'
+                    : 'https://api.cerebras.ai/v1/chat/completions';
+
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (formProvider !== 'gemini' && formProvider !== 'custom') {
+                headers['Authorization'] = `Bearer ${formKey}`;
+            }
+
+            const body = formProvider === 'gemini'
+                ? { contents: [{ parts: [{ text: 'Ping' }] }] }
+                : {
+                    model: PROVIDER_CONFIG[formProvider].models[0],
+                    messages: [{ role: 'user', content: 'Ping' }]
+                };
+
+            if (formProvider !== 'custom') {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body)
+                });
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error?.message || `API Error: ${res.status}`);
+                }
+            }
+
+            const limits = {
+                rpm: formRPM ? parseInt(formRPM) : undefined,
+                rpd: formRPD ? parseInt(formRPD) : undefined,
+                tpd: formTPD ? parseInt(formTPD) : undefined,
+            };
+
             if (editingKey) {
                 await updateApiKey(user.uid, editingKey.id, {
                     provider: formProvider,
@@ -116,6 +156,9 @@ export default function ApiKeysPage() {
             loadKeys();
         } catch (err) {
             console.error('Failed to save API key:', err);
+            setModalError(err instanceof Error ? err.message : '유효하지 않은 API 키입니다.');
+        } finally {
+            setIsValidating(false);
         }
     };
 
@@ -336,10 +379,25 @@ export default function ApiKeysPage() {
                             </div>
                         </div>
 
+                        {modalError && (
+                            <div style={{
+                                color: 'var(--accent-red)',
+                                fontSize: 12,
+                                marginBottom: 16,
+                                padding: 10,
+                                background: 'rgba(239,68,68,0.1)',
+                                borderRadius: 6,
+                                border: '1px solid rgba(239,68,68,0.2)'
+                            }}>
+                                ⚠️ {modalError}
+                            </div>
+                        )}
+
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowModal(false)}>취소</button>
-                            <button className="btn btn-primary" onClick={handleSave}>
-                                {editingKey ? '수정' : '추가'}
+                            <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={isValidating}>취소</button>
+                            <button className="btn btn-primary" onClick={handleSave} disabled={isValidating}>
+                                {isValidating ? <div className="spinner" /> : null}
+                                {isValidating ? '검증 중...' : (editingKey ? '수정' : '추가')}
                             </button>
                         </div>
                     </div>
