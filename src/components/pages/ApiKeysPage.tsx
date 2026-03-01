@@ -132,6 +132,7 @@ export default function ApiKeysPage() {
 
     const groupedKeys: Record<string, ApiKey[]> = {};
     keys.forEach(k => {
+        if (!groupedKeys[k.provider]) groupedKeys[k.provider] = [];
         groupedKeys[k.provider].push(k);
     });
 
