@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { smartAICall, checkSensitiveData, getAvailableModels, getDefaultModel } from '@/lib/aiProxy';
-import { addQALog, addUsageRecord, getProjects } from '@/lib/firestore';
-import { AIProvider, PROVIDER_CONFIG, Project } from '@/lib/types';
+import { checkSensitiveData, getAvailableModels, getDefaultModel } from '@/lib/aiProxy';
+import { addQALog, addUsageRecord, getProjects, getApiKeys } from '@/lib/firestore';
+import { AIProvider, PROVIDER_CONFIG, Project, ApiKey } from '@/lib/types';
 import { Send, RotateCcw, AlertTriangle, Zap, Clock, Hash, RefreshCw } from 'lucide-react';
 
 export default function PlaygroundPage() {
@@ -16,6 +16,7 @@ export default function PlaygroundPage() {
     const [prompt, setPrompt] = useState('');
     const [response, setResponse] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
     const [meta, setMeta] = useState<{
         inputTokens: number;
         outputTokens: number;
@@ -33,6 +34,8 @@ export default function PlaygroundPage() {
         if (!user) return;
         const projs = await getProjects(user.uid);
         setProjects(projs);
+        const keys = await getApiKeys(user.uid);
+        setApiKeys(keys);
     }, [user]);
 
     useEffect(() => {
@@ -61,12 +64,28 @@ export default function PlaygroundPage() {
         setMeta(null);
 
         try {
-            const result = await smartAICall({
-                prompt,
-                provider,
-                model,
-                projectId,
+            // Find a key for the chosen provider
+            const providerKey = apiKeys.find(k => k.provider === provider && k.isActive);
+            if (!providerKey) {
+                throw new Error(`${PROVIDER_CONFIG[provider].name} 키가 등록되어 있지 않습니다. API 키 관리 페이지에서 먼저 추가하세요.`);
+            }
+
+            const res = await fetch('/api/validate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider,
+                    key: providerKey.key,
+                    model,
+                    prompt: prompt.trim(),
+                })
             });
+
+            const result = await res.json();
+
+            if (!res.ok) {
+                throw new Error(result.error?.message || '알 수 없는 API 오류');
+            }
 
             setResponse(result.text);
             setMeta({
@@ -107,7 +126,7 @@ export default function PlaygroundPage() {
             });
 
         } catch (err: unknown) {
-            const errMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            const errMsg = err instanceof Error ? err.message : '알 수 없는 오류';
             setError(errMsg);
             console.error('AI call failed:', err);
         } finally {
