@@ -111,8 +111,8 @@ export default function PlaygroundPage() {
                 totalTokens: result.totalTokens,
                 latencyMs: result.latencyMs,
                 hasSensitiveData: checkSensitiveData(prompt) || checkSensitiveData(result.text),
-                fallbackUsed: result.fallbackUsed,
-                fallbackFrom: result.fallbackFrom,
+                fallbackUsed: result.fallbackUsed || false,
+                ...(result.fallbackFrom ? { fallbackFrom: result.fallbackFrom } : {}),
             });
 
             // Save usage record
