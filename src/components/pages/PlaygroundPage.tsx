@@ -7,6 +7,17 @@ import { addQALog, addUsageRecord, getProjects, getApiKeys } from '@/lib/firesto
 import { AIProvider, PROVIDER_CONFIG, Project, ApiKey } from '@/lib/types';
 import { Send, RotateCcw, AlertTriangle, Zap, Clock, Hash, RefreshCw } from 'lucide-react';
 
+const EXAMPLE_PROMPTS = [
+    { label: '🔢 강 건너기', prompt: '농부가 여우, 닭, 곡식을 배로 강을 건너야 합니다. 배에는 농부와 한 가지만 실을 수 있으며, 여우와 닭, 닭과 곡식은 혼자 두면 안 됩니다. 어떻게 하면 모두 안전하게 건널 수 있을까요?' },
+    { label: '⚖️ 동전 찾기', prompt: '동전 12개 중 하나가 가짜(무게가 다름)입니다. 양팔 저울을 3번만 사용하여 가짜 동전을 찾아내는 방법을 설명하세요.' },
+    { label: '💡 전구 스위치', prompt: '방 밖에 스위치 3개가 있고, 방 안에 전구 3개가 있습니다. 방에는 딱 한 번만 들어갈 수 있습니다. 어떤 스위치가 어떤 전구와 연결되어 있는지 알아내는 방법은?' },
+    { label: '🔴 붉은 방', prompt: '한 남자가 올리비아를 죽였습니다. 수십 명의 목격자가 있었지만 아무도 그를 체포하지 않았습니다. 왜일까요?' },
+    { label: '🧠 트롤리 문제', prompt: '폭주하는 트롤리가 선로에 묶인 5명을 향해 달려오고 있습니다. 당신은 레버를 당겨 다른 선로로 바꿀 수 있지만, 그 선로에는 1명이 묶여 있습니다. 어떻게 하시겠습니까? 그 이유는?' },
+    { label: '🌏 지구 밖에서', prompt: '당신이 외계인이라면 인류 문명의 수준을 판단하기 위해 어떤 기준을 사용하겠습니까?' },
+    { label: '📐 수학 증명', prompt: '1 + 1 = 2 임을 수학적으로 증명해보세요.' },
+    { label: '🪞 자기인식', prompt: '당신은 자신이 AI라는 것을 어떻게 알 수 있나요? 당신이 의식이 있다는 것을 증명할 수 있나요?' },
+];
+
 export default function PlaygroundPage() {
     const { user } = useAuth();
     const [provider, setProvider] = useState<AIProvider>('gemini');
@@ -236,6 +247,39 @@ export default function PlaygroundPage() {
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--accent-blue)' }}>
                         💬 프롬프트
                     </div>
+
+                    {/* Example prompts */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                        {EXAMPLE_PROMPTS.map((ex, i) => (
+                            <button
+                                key={i}
+                                onClick={() => setPrompt(ex.prompt)}
+                                style={{
+                                    fontSize: 11,
+                                    padding: '4px 10px',
+                                    borderRadius: 20,
+                                    border: '1px solid var(--border-color)',
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s',
+                                    whiteSpace: 'nowrap',
+                                }}
+                                onMouseEnter={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent-blue)';
+                                    (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent-blue)';
+                                }}
+                                onMouseLeave={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-color)';
+                                    (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
+                                }}
+                                title={ex.prompt}
+                            >
+                                {ex.label}
+                            </button>
+                        ))}
+                    </div>
+
                     <textarea
                         className="playground-input"
                         value={prompt}
