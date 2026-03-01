@@ -85,7 +85,7 @@ export const PROVIDER_CONFIG: Record<AIProvider, {
         color: '#4285F4',
         gradient: 'linear-gradient(135deg, #4285F4, #34A853)',
         defaultLimits: { rpm: 15, rpd: 1500, tpm: 1000000, tpd: 50000000 },
-        models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+        models: ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
         costPer1MInput: 1.25,
         costPer1MOutput: 5.0,
     },

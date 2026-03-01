@@ -98,34 +98,21 @@ export default function ApiKeysPage() {
         setModalError('');
 
         try {
+            const trimmedKey = formKey.trim();
             // Validate the key before saving
-            const url = formProvider === 'gemini'
-                ? `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_CONFIG[formProvider].models[0]}:generateContent?key=${formKey}`
-                : formProvider === 'groq'
-                    ? 'https://api.groq.com/openai/v1/chat/completions'
-                    : 'https://api.cerebras.ai/v1/chat/completions';
-
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (formProvider !== 'gemini' && formProvider !== 'custom') {
-                headers['Authorization'] = `Bearer ${formKey}`;
-            }
-
-            const body = formProvider === 'gemini'
-                ? { contents: [{ parts: [{ text: 'Ping' }] }] }
-                : {
-                    model: PROVIDER_CONFIG[formProvider].models[0],
-                    messages: [{ role: 'user', content: 'Ping' }]
-                };
-
             if (formProvider !== 'custom') {
-                const res = await fetch(url, {
+                const res = await fetch('/api/validate', {
                     method: 'POST',
-                    headers,
-                    body: JSON.stringify(body)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: formProvider,
+                        key: trimmedKey,
+                        model: PROVIDER_CONFIG[formProvider].models[0]
+                    })
                 });
 
                 if (!res.ok) {
-                    const data = await res.json();
+                    const data = await res.json().catch(() => ({}));
                     throw new Error(data.error?.message || `API Error: ${res.status}`);
                 }
             }
@@ -139,14 +126,14 @@ export default function ApiKeysPage() {
             if (editingKey) {
                 await updateApiKey(user.uid, editingKey.id, {
                     provider: formProvider,
-                    key: formKey,
+                    key: trimmedKey,
                     label: formLabel,
                     limits,
                 });
             } else {
                 await addApiKey(user.uid, {
                     provider: formProvider,
-                    key: formKey,
+                    key: trimmedKey,
                     label: formLabel || `${PROVIDER_CONFIG[formProvider].name} Key`,
                     limits,
                     isActive: true,
@@ -265,8 +252,10 @@ export default function ApiKeysPage() {
                                                 alignItems: 'center',
                                                 gap: 8,
                                             }}>
-                                                {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                                                <button className="btn-icon" onClick={() => toggleKeyVisibility(key.id)} style={{ padding: 4 }}>
+                                                <div style={{ wordBreak: 'break-all', flex: 1 }}>
+                                                    {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                                                </div>
+                                                <button className="btn-icon" onClick={() => toggleKeyVisibility(key.id)} style={{ padding: 4, flexShrink: 0 }}>
                                                     {visibleKeys.has(key.id) ? <EyeOff size={14} /> : <Eye size={14} />}
                                                 </button>
                                             </div>
@@ -452,35 +441,22 @@ function TestCurlModal({ apiKey, onClose }: { apiKey: ApiKey; onClose: () => voi
     const runTest = async () => {
         setTestResult({ status: 'loading' });
         try {
-            const url = apiKey.provider === 'gemini'
-                ? `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_CONFIG[apiKey.provider].models[0]}:generateContent?key=${apiKey.key}`
-                : apiKey.provider === 'groq'
-                    ? 'https://api.groq.com/openai/v1/chat/completions'
-                    : 'https://api.cerebras.ai/v1/chat/completions';
-
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (apiKey.provider !== 'gemini') {
-                headers['Authorization'] = `Bearer ${apiKey.key}`;
-            }
-
-            const body = apiKey.provider === 'gemini'
-                ? { contents: [{ parts: [{ text: 'Hello, how are you?' }] }] }
-                : {
-                    model: PROVIDER_CONFIG[apiKey.provider].models[0],
-                    messages: [{ role: 'user', content: 'Hello, how are you?' }]
-                };
-
-            const res = await fetch(url, {
+            const trimmedKey = apiKey.key.trim();
+            const res = await fetch('/api/validate', {
                 method: 'POST',
-                headers,
-                body: JSON.stringify(body)
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider: apiKey.provider,
+                    key: trimmedKey,
+                    model: PROVIDER_CONFIG[apiKey.provider].models[0]
+                })
             });
 
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
             if (res.ok) {
-                setTestResult({ status: 'success', data });
+                setTestResult({ status: 'success', data: data.data });
             } else {
-                setTestResult({ status: 'error', error: data.error?.message || JSON.stringify(data) });
+                setTestResult({ status: 'error', error: data.error?.message || `API Error: ${res.status}` });
             }
         } catch (err) {
             setTestResult({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' });

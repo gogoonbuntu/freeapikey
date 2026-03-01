@@ -30,7 +30,7 @@ interface AIResponse {
 }
 
 // === Gemini API ===
-async function callGemini(prompt: string, model: string = 'gemini-2.0-flash'): Promise<AIResponse> {
+async function callGemini(prompt: string, model: string = 'gemini-2.5-flash-lite'): Promise<AIResponse> {
     const start = Date.now();
     const apiKey = API_KEYS.gemini;
 
@@ -157,7 +157,7 @@ async function callCerebras(prompt: string, model: string = 'llama3.1-8b'): Prom
 async function callProvider(prompt: string, provider: AIProvider, model?: string): Promise<AIResponse> {
     switch (provider) {
         case 'gemini':
-            return callGemini(prompt, model || 'gemini-2.0-flash');
+            return callGemini(prompt, model || 'gemini-2.5-flash-lite');
         case 'groq':
             return callGroq(prompt, model || 'llama-3.3-70b-versatile');
         case 'cerebras':
