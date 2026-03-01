@@ -8,6 +8,7 @@ import {
     FolderKanban,
     MessageSquareText,
     FlaskConical,
+    Swords,
     LogOut,
     Menu,
     X,
@@ -24,6 +25,7 @@ const navItems = [
     { id: 'projects', label: '프로젝트', icon: FolderKanban, section: 'MANAGE' },
     { id: 'qa-logs', label: 'QA 로그', icon: MessageSquareText, section: 'ANALYZE' },
     { id: 'playground', label: '플레이그라운드', icon: FlaskConical, section: 'TOOLS' },
+    { id: 'ai-debate', label: 'AI vs AI 토론', icon: Swords, section: 'TOOLS' },
 ];
 
 export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {

@@ -9,6 +9,7 @@ import ApiKeysPage from '@/components/pages/ApiKeysPage';
 import ProjectsPage from '@/components/pages/ProjectsPage';
 import QALogsPage from '@/components/pages/QALogsPage';
 import PlaygroundPage from '@/components/pages/PlaygroundPage';
+import AiDebatePage from '@/components/pages/AiDebatePage';
 import { seedInitialData } from '@/lib/seedData';
 
 export default function AppShell() {
@@ -53,6 +54,8 @@ export default function AppShell() {
                 return <QALogsPage />;
             case 'playground':
                 return <PlaygroundPage />;
+            case 'ai-debate':
+                return <AiDebatePage />;
             default:
                 return <DashboardPage />;
         }
