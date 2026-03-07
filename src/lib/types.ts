@@ -6,6 +6,7 @@ export interface ApiKey {
     key: string;
     label: string;
     limits: ProviderLimits;
+    quotaStatus?: QuotaStatus;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -17,6 +18,16 @@ export interface ProviderLimits {
     tpm?: number;       // Tokens per minute
     tpd?: number;       // Tokens per day
     dailyTokenLimit?: number;
+}
+
+export interface QuotaStatus {
+    remainingRequests?: number;
+    remainingTokens?: number;
+    limitRequests?: number;
+    limitTokens?: number;
+    isValid: boolean;
+    checkedAt: Date;
+    error?: string;
 }
 
 export interface Project {

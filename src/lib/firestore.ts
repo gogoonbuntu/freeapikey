@@ -56,6 +56,29 @@ export async function deleteApiKey(uid: string, keyId: string): Promise<void> {
     await deleteDoc(doc(db, 'users', uid, 'apiKeys', keyId));
 }
 
+export async function updateApiKeyQuota(
+    uid: string,
+    keyId: string,
+    quotaStatus: {
+        remainingRequests?: number;
+        remainingTokens?: number;
+        limitRequests?: number;
+        limitTokens?: number;
+        isValid: boolean;
+        checkedAt: Date;
+        error?: string;
+    }
+): Promise<void> {
+    const ref = doc(db, 'users', uid, 'apiKeys', keyId);
+    await updateDoc(ref, {
+        quotaStatus: {
+            ...quotaStatus,
+            checkedAt: Timestamp.fromDate(quotaStatus.checkedAt),
+        },
+        updatedAt: Timestamp.now(),
+    });
+}
+
 // === Projects ===
 export async function getProjects(uid: string): Promise<Project[]> {
     const snap = await getDocs(query(userCol(uid, 'projects'), orderBy('createdAt', 'desc')));

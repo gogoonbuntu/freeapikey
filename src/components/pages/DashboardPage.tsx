@@ -4,9 +4,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getApiKeys, getTodayUsage, getQALogs } from '@/lib/firestore';
 import { ApiKey, QALog, PROVIDER_CONFIG, AIProvider } from '@/lib/types';
+import { useQuotaChecker } from '@/lib/useQuotaChecker';
 import UsageCard from '@/components/UsageCard';
 import GaugeChart from '@/components/GaugeChart';
-import { Activity, Zap, Clock, TrendingUp } from 'lucide-react';
+import { Activity, Zap, Clock, TrendingUp, RefreshCw } from 'lucide-react';
 
 export default function DashboardPage() {
     const { user } = useAuth();
@@ -19,6 +20,11 @@ export default function DashboardPage() {
     });
     const [recentLogs, setRecentLogs] = useState<QALog[]>([]);
     const [loading, setLoading] = useState(true);
+
+    const { quotaMap, isChecking, lastCheckedAt, checkNow, nextCheckIn } = useQuotaChecker(
+        user?.uid || null,
+        apiKeys
+    );
 
     const loadData = useCallback(async () => {
         if (!user) return;
@@ -48,7 +54,23 @@ export default function DashboardPage() {
         return PROVIDER_CONFIG[provider].defaultLimits;
     };
 
+    const getProviderQuota = (provider: AIProvider) => {
+        const key = apiKeys.find(k => k.provider === provider);
+        if (key && quotaMap[key.id]) {
+            return quotaMap[key.id];
+        }
+        return null;
+    };
+
     const getStatus = (provider: AIProvider): 'normal' | 'warning' | 'exceeded' => {
+        const quota = getProviderQuota(provider);
+        if (quota && quota.remainingRequests !== undefined && quota.limitRequests) {
+            const usedPct = 1 - (quota.remainingRequests / quota.limitRequests);
+            if (usedPct >= 1) return 'exceeded';
+            if (usedPct >= 0.7) return 'warning';
+            return 'normal';
+        }
+        // Fallback to usage-based estimation
         const limits = getProviderLimits(provider);
         const u = usage[provider];
         const rpd = limits.rpd || limits.dailyTokenLimit || 0;
@@ -62,6 +84,12 @@ export default function DashboardPage() {
 
     const totalRequests = Object.values(usage).reduce((sum, u) => sum + u.requests, 0);
     const totalTokens = Object.values(usage).reduce((sum, u) => sum + u.tokens, 0);
+
+    const formatCountdown = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${String(s).padStart(2, '0')}`;
+    };
 
     if (loading) {
         return (
@@ -83,9 +111,28 @@ export default function DashboardPage() {
 
     return (
         <div>
-            <div className="page-header">
-                <h2>대시보드</h2>
-                <p>AI API 사용 현황 종합 모니터링</p>
+            <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                    <h2>대시보드</h2>
+                    <p>AI API 사용 현황 종합 모니터링</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'right' }}>
+                        {lastCheckedAt && (
+                            <div>마지막 체크: {lastCheckedAt.toLocaleTimeString('ko-KR')}</div>
+                        )}
+                        <div>다음 체크: {formatCountdown(nextCheckIn)}</div>
+                    </div>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={checkNow}
+                        disabled={isChecking}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px' }}
+                    >
+                        <RefreshCw size={14} className={isChecking ? 'spinning' : ''} style={isChecking ? { animation: 'spin 1s linear infinite' } : {}} />
+                        {isChecking ? '확인 중...' : '할당량 체크'}
+                    </button>
+                </div>
             </div>
 
             {/* Summary Stats */}
@@ -167,6 +214,7 @@ export default function DashboardPage() {
             <div className="grid-3" style={{ marginBottom: 24 }}>
                 {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(provider => {
                     const limits = getProviderLimits(provider);
+                    const quota = getProviderQuota(provider);
                     return (
                         <UsageCard
                             key={provider}
@@ -176,6 +224,12 @@ export default function DashboardPage() {
                             maxRequests={limits.rpd || 0}
                             maxTokens={limits.tpd || limits.dailyTokenLimit || 0}
                             status={getStatus(provider)}
+                            remainingRequests={quota?.remainingRequests}
+                            remainingTokens={quota?.remainingTokens}
+                            limitRequests={quota?.limitRequests}
+                            limitTokens={quota?.limitTokens}
+                            quotaCheckedAt={quota?.checkedAt}
+                            quotaIsValid={quota?.isValid}
                         />
                     );
                 })}
@@ -188,25 +242,34 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 20, padding: '12px 0' }}>
                     {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(provider => {
+                        const quota = getProviderQuota(provider);
                         const limits = getProviderLimits(provider);
-                        const rpd = limits.rpd || 0;
+                        // Use real remaining data if available
+                        const maxVal = quota?.limitRequests || limits.rpd || 0;
+                        const usedVal = quota?.remainingRequests !== undefined
+                            ? (quota.limitRequests || maxVal) - quota.remainingRequests
+                            : usage[provider].requests;
                         return (
                             <GaugeChart
                                 key={`req-${provider}`}
-                                value={usage[provider].requests}
-                                max={rpd}
+                                value={usedVal}
+                                max={maxVal}
                                 label={`${PROVIDER_CONFIG[provider].name} 요청`}
                                 color={PROVIDER_CONFIG[provider].color}
                             />
                         );
                     })}
                     {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(provider => {
+                        const quota = getProviderQuota(provider);
                         const limits = getProviderLimits(provider);
-                        const tokenLimit = limits.tpd || limits.dailyTokenLimit || 0;
+                        const tokenLimit = quota?.limitTokens || limits.tpd || limits.dailyTokenLimit || 0;
+                        const usedTokens = quota?.remainingTokens !== undefined
+                            ? (quota.limitTokens || tokenLimit) - quota.remainingTokens
+                            : usage[provider].tokens;
                         return (
                             <GaugeChart
                                 key={`tok-${provider}`}
-                                value={usage[provider].tokens}
+                                value={usedTokens}
                                 max={tokenLimit}
                                 label={`${PROVIDER_CONFIG[provider].name} 토큰`}
                                 color={PROVIDER_CONFIG[provider].color}

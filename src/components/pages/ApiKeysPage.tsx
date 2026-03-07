@@ -4,7 +4,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getApiKeys, addApiKey, updateApiKey, deleteApiKey } from '@/lib/firestore';
 import { ApiKey, AIProvider, PROVIDER_CONFIG } from '@/lib/types';
-import { Plus, Edit2, Trash2, Eye, EyeOff, Key, AlertTriangle, Terminal, Check, Copy, Play } from 'lucide-react';
+import { useQuotaChecker } from '@/lib/useQuotaChecker';
+import { Plus, Edit2, Trash2, Eye, EyeOff, Key, AlertTriangle, Terminal, Check, Copy, Play, RefreshCw } from 'lucide-react';
 
 export default function ApiKeysPage() {
     const { user } = useAuth();
@@ -25,6 +26,11 @@ export default function ApiKeysPage() {
     const [formRPM, setFormRPM] = useState('');
     const [formRPD, setFormRPD] = useState('');
     const [formTPD, setFormTPD] = useState('');
+
+    const { quotaMap, isChecking, lastCheckedAt, checkNow, checkSingleKey, nextCheckIn } = useQuotaChecker(
+        user?.uid || null,
+        keys
+    );
 
     const loadKeys = useCallback(async () => {
         if (!user) return;
@@ -171,6 +177,18 @@ export default function ApiKeysPage() {
         setShowTestModal(true);
     };
 
+    const formatNumber = (n: number) => {
+        if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+        if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+        return n.toLocaleString();
+    };
+
+    const formatCountdown = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${String(s).padStart(2, '0')}`;
+    };
+
     return (
         <div>
             <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -178,10 +196,27 @@ export default function ApiKeysPage() {
                     <h2>API 키 관리</h2>
                     <p>AI 프로바이더별 API 키를 안전하게 관리하세요</p>
                 </div>
-                <button className="btn btn-primary" onClick={openAdd}>
-                    <Plus size={16} />
-                    키 추가
-                </button>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'right' }}>
+                        {lastCheckedAt && (
+                            <div>체크: {lastCheckedAt.toLocaleTimeString('ko-KR')}</div>
+                        )}
+                        <div>다음: {formatCountdown(nextCheckIn)}</div>
+                    </div>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={checkNow}
+                        disabled={isChecking}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px' }}
+                    >
+                        <RefreshCw size={14} style={isChecking ? { animation: 'spin 1s linear infinite' } : {}} />
+                        {isChecking ? '체크 중' : '전체 체크'}
+                    </button>
+                    <button className="btn btn-primary" onClick={openAdd}>
+                        <Plus size={16} />
+                        키 추가
+                    </button>
+                </div>
             </div>
 
             {/* Security Notice */}
@@ -231,61 +266,170 @@ export default function ApiKeysPage() {
                             <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>({providerKeys.length})</span>
                         </h3>
                         <div className="grid-2">
-                            {providerKeys.map(key => (
-                                <div key={key.id} className="card" style={{ position: 'relative', overflow: 'hidden' }}>
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        right: 0,
-                                        height: 3,
-                                        background: PROVIDER_CONFIG[key.provider]?.gradient || 'var(--accent-blue)',
-                                    }} />
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 4 }}>
-                                        <div>
-                                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{key.label}</div>
-                                            <div style={{
-                                                fontFamily: 'monospace',
-                                                fontSize: 13,
-                                                color: 'var(--text-secondary)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 8,
-                                            }}>
-                                                <div style={{ wordBreak: 'break-all', flex: 1 }}>
-                                                    {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                            {providerKeys.map(key => {
+                                const quota = quotaMap[key.id];
+                                const providerConfig = PROVIDER_CONFIG[key.provider];
+                                return (
+                                    <div key={key.id} className="card" style={{ position: 'relative', overflow: 'hidden' }}>
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            right: 0,
+                                            height: 3,
+                                            background: providerConfig?.gradient || 'var(--accent-blue)',
+                                        }} />
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 4 }}>
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                                    <span style={{ fontWeight: 600 }}>{key.label}</span>
+                                                    {quota && (
+                                                        <span style={{
+                                                            fontSize: 10,
+                                                            padding: '2px 6px',
+                                                            borderRadius: 4,
+                                                            background: quota.isValid ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                                                            color: quota.isValid ? 'var(--accent-green)' : 'var(--accent-red)',
+                                                        }}>
+                                                            {quota.isValid ? '✓ 유효' : '✗ 무효'}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                <button className="btn-icon" onClick={() => toggleKeyVisibility(key.id)} style={{ padding: 4, flexShrink: 0 }}>
-                                                    {visibleKeys.has(key.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                <div style={{
+                                                    fontFamily: 'monospace',
+                                                    fontSize: 13,
+                                                    color: 'var(--text-secondary)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 8,
+                                                }}>
+                                                    <div style={{ wordBreak: 'break-all', flex: 1 }}>
+                                                        {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                                                    </div>
+                                                    <button className="btn-icon" onClick={() => toggleKeyVisibility(key.id)} style={{ padding: 4, flexShrink: 0 }}>
+                                                        {visibleKeys.has(key.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 4 }}>
+                                                <button
+                                                    className="btn-icon"
+                                                    onClick={() => checkSingleKey(key)}
+                                                    title="할당량 체크"
+                                                    disabled={isChecking}
+                                                    style={isChecking ? { animation: 'spin 1s linear infinite' } : {}}
+                                                >
+                                                    <RefreshCw size={14} />
+                                                </button>
+                                                <button className="btn-icon" onClick={() => openTest(key)} title="테스트">
+                                                    <Terminal size={14} />
+                                                </button>
+                                                <button className="btn-icon" onClick={() => openEdit(key)}>
+                                                    <Edit2 size={14} />
+                                                </button>
+                                                <button className="btn-icon" onClick={() => handleDelete(key.id)} style={{ color: 'var(--accent-red)' }}>
+                                                    <Trash2 size={14} />
                                                 </button>
                                             </div>
                                         </div>
-                                        <div style={{ display: 'flex', gap: 4 }}>
-                                            <button className="btn-icon" onClick={() => openTest(key)} title="테스트">
-                                                <Terminal size={14} />
-                                            </button>
-                                            <button className="btn-icon" onClick={() => openEdit(key)}>
-                                                <Edit2 size={14} />
-                                            </button>
-                                            <button className="btn-icon" onClick={() => handleDelete(key.id)} style={{ color: 'var(--accent-red)' }}>
-                                                <Trash2 size={14} />
-                                            </button>
+
+                                        {/* Quota Status */}
+                                        {quota && quota.isValid && (quota.remainingRequests !== undefined || quota.remainingTokens !== undefined) && (
+                                            <div style={{
+                                                marginTop: 12,
+                                                padding: '10px 12px',
+                                                borderRadius: 'var(--radius-sm)',
+                                                background: 'rgba(59,130,246,0.04)',
+                                                border: '1px solid rgba(59,130,246,0.08)',
+                                            }}>
+                                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8, fontWeight: 600 }}>
+                                                    📡 잔여 할당량
+                                                </div>
+                                                {quota.remainingRequests !== undefined && quota.limitRequests && (
+                                                    <div style={{ marginBottom: 8 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>요청</span>
+                                                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                                                {formatNumber(quota.remainingRequests)} / {formatNumber(quota.limitRequests)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="progress-bar" style={{ height: 4 }}>
+                                                            <div
+                                                                className="progress-bar-fill"
+                                                                style={{
+                                                                    width: `${Math.min((quota.remainingRequests / quota.limitRequests) * 100, 100)}%`,
+                                                                    background: (quota.remainingRequests / quota.limitRequests) < 0.1
+                                                                        ? 'var(--accent-red)'
+                                                                        : (quota.remainingRequests / quota.limitRequests) < 0.3
+                                                                            ? 'var(--accent-yellow)'
+                                                                            : providerConfig.color,
+                                                                    transition: 'width 0.6s ease',
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {quota.remainingTokens !== undefined && quota.limitTokens && (
+                                                    <div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>토큰</span>
+                                                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                                                {formatNumber(quota.remainingTokens)} / {formatNumber(quota.limitTokens)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="progress-bar" style={{ height: 4 }}>
+                                                            <div
+                                                                className="progress-bar-fill"
+                                                                style={{
+                                                                    width: `${Math.min((quota.remainingTokens / quota.limitTokens) * 100, 100)}%`,
+                                                                    background: (quota.remainingTokens / quota.limitTokens) < 0.1
+                                                                        ? 'var(--accent-red)'
+                                                                        : (quota.remainingTokens / quota.limitTokens) < 0.3
+                                                                            ? 'var(--accent-yellow)'
+                                                                            : providerConfig.color,
+                                                                    transition: 'width 0.6s ease',
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Quota Error */}
+                                        {quota && !quota.isValid && quota.error && (
+                                            <div style={{
+                                                marginTop: 12,
+                                                padding: '8px 12px',
+                                                borderRadius: 'var(--radius-sm)',
+                                                background: 'rgba(239,68,68,0.06)',
+                                                border: '1px solid rgba(239,68,68,0.15)',
+                                                fontSize: 11,
+                                                color: 'var(--accent-red)',
+                                            }}>
+                                                ⚠️ {quota.error}
+                                            </div>
+                                        )}
+
+                                        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                                            <div style={{ display: 'flex', gap: 16 }}>
+                                                {key.limits.rpm && <span>RPM: {key.limits.rpm}</span>}
+                                                {key.limits.rpd && <span>RPD: {key.limits.rpd.toLocaleString()}</span>}
+                                                {(key.limits.tpd || key.limits.dailyTokenLimit) && (
+                                                    <span>TPD: {(key.limits.tpd || key.limits.dailyTokenLimit || 0).toLocaleString()}</span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                                            <span>추가: {key.createdAt.toLocaleDateString('ko-KR')}</span>
+                                            {quota?.checkedAt && (
+                                                <span>체크: {quota.checkedAt.toLocaleTimeString('ko-KR')}</span>
+                                            )}
                                         </div>
                                     </div>
-
-                                    <div style={{ marginTop: 16, display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-tertiary)' }}>
-                                        {key.limits.rpm && <span>RPM: {key.limits.rpm}</span>}
-                                        {key.limits.rpd && <span>RPD: {key.limits.rpd.toLocaleString()}</span>}
-                                        {(key.limits.tpd || key.limits.dailyTokenLimit) && (
-                                            <span>TPD: {(key.limits.tpd || key.limits.dailyTokenLimit || 0).toLocaleString()}</span>
-                                        )}
-                                    </div>
-
-                                    <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
-                                        추가: {key.createdAt.toLocaleDateString('ko-KR')}
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 ))
