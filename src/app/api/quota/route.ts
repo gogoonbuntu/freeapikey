@@ -15,17 +15,34 @@ interface QuotaCheckResponse {
     error?: string;
 }
 
-// Groq: minimal call to read rate limit headers
+// Groq: minimal chat completion call to read accurate global rate limit headers
 async function checkGroqQuota(apiKey: string): Promise<QuotaCheckResponse> {
     try {
-        const res = await fetch('https://api.groq.com/openai/v1/models', {
-            method: 'GET',
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
             },
+            body: JSON.stringify({
+                model: 'llama-3.1-8b-instant',
+                messages: [{ role: 'user', content: '.' }],
+                max_tokens: 1,
+            }),
         });
 
         if (!res.ok) {
+            // 429 still carries rate limit headers — read them
+            if (res.status === 429) {
+                return {
+                    remainingRequests: 0,
+                    remainingTokens: 0,
+                    limitRequests: parseHeaderInt(res.headers.get('x-ratelimit-limit-requests')),
+                    limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens')),
+                    isValid: true,
+                    checkedAt: new Date().toISOString(),
+                };
+            }
             return {
                 isValid: false,
                 checkedAt: new Date().toISOString(),
@@ -50,17 +67,33 @@ async function checkGroqQuota(apiKey: string): Promise<QuotaCheckResponse> {
     }
 }
 
-// Cerebras: minimal call to read rate limit headers
+// Cerebras: minimal chat completion call to read accurate global rate limit headers
 async function checkCerebrasQuota(apiKey: string): Promise<QuotaCheckResponse> {
     try {
-        const res = await fetch('https://api.cerebras.ai/v1/models', {
-            method: 'GET',
+        const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+            method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
             },
+            body: JSON.stringify({
+                model: 'llama3.1-8b',
+                messages: [{ role: 'user', content: '.' }],
+                max_tokens: 1,
+            }),
         });
 
         if (!res.ok) {
+            if (res.status === 429) {
+                return {
+                    remainingRequests: 0,
+                    remainingTokens: 0,
+                    limitRequests: parseHeaderInt(res.headers.get('x-ratelimit-limit-requests-day')),
+                    limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens-minute')),
+                    isValid: true,
+                    checkedAt: new Date().toISOString(),
+                };
+            }
             return {
                 isValid: false,
                 checkedAt: new Date().toISOString(),
