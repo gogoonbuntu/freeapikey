@@ -30,12 +30,21 @@ function toDate(ts: unknown): Date {
 // === API Keys ===
 export async function getApiKeys(uid: string): Promise<ApiKey[]> {
     const snap = await getDocs(query(userCol(uid, 'apiKeys'), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-        createdAt: toDate(d.data().createdAt),
-        updatedAt: toDate(d.data().updatedAt),
-    })) as ApiKey[];
+    return snap.docs.map(d => {
+        const data = d.data();
+        return {
+            id: d.id,
+            ...data,
+            createdAt: toDate(data.createdAt),
+            updatedAt: toDate(data.updatedAt),
+            ...(data.quotaStatus ? {
+                quotaStatus: {
+                    ...data.quotaStatus,
+                    checkedAt: toDate(data.quotaStatus.checkedAt),
+                },
+            } : {}),
+        };
+    }) as ApiKey[];
 }
 
 export async function addApiKey(uid: string, key: Omit<ApiKey, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
@@ -70,11 +79,18 @@ export async function updateApiKeyQuota(
     }
 ): Promise<void> {
     const ref = doc(db, 'users', uid, 'apiKeys', keyId);
+    // Strip undefined values — Firestore rejects them
+    const cleanStatus: Record<string, unknown> = {
+        isValid: quotaStatus.isValid,
+        checkedAt: Timestamp.fromDate(quotaStatus.checkedAt),
+    };
+    if (quotaStatus.remainingRequests !== undefined) cleanStatus.remainingRequests = quotaStatus.remainingRequests;
+    if (quotaStatus.remainingTokens !== undefined) cleanStatus.remainingTokens = quotaStatus.remainingTokens;
+    if (quotaStatus.limitRequests !== undefined) cleanStatus.limitRequests = quotaStatus.limitRequests;
+    if (quotaStatus.limitTokens !== undefined) cleanStatus.limitTokens = quotaStatus.limitTokens;
+    if (quotaStatus.error !== undefined) cleanStatus.error = quotaStatus.error;
     await updateDoc(ref, {
-        quotaStatus: {
-            ...quotaStatus,
-            checkedAt: Timestamp.fromDate(quotaStatus.checkedAt),
-        },
+        quotaStatus: cleanStatus,
         updatedAt: Timestamp.now(),
     });
 }
