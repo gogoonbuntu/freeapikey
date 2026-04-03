@@ -113,7 +113,7 @@ export const PROVIDER_CONFIG: Record<AIProvider, {
         name: 'Cerebras',
         color: '#8B5CF6',
         gradient: 'linear-gradient(135deg, #8B5CF6, #A78BFA)',
-        defaultLimits: { rpm: 30, rpd: 900, dailyTokenLimit: 1000000 },
+        defaultLimits: { rpm: 30, rpd: 14400, tpm: 60000, tpd: 1000000, dailyTokenLimit: 1000000 },
         models: ['llama3.1-8b', 'gpt-oss-120b'],
         costPer1MInput: 0.10,
         costPer1MOutput: 0.10,

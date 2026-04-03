@@ -29,14 +29,19 @@ export default function DashboardPage() {
     const loadData = useCallback(async () => {
         if (!user) return;
         try {
-            const [keys, todayUsage, logs] = await Promise.all([
+            const [keysResult, usageResult, logsResult] = await Promise.allSettled([
                 getApiKeys(user.uid),
                 getTodayUsage(user.uid),
                 getQALogs(user.uid, { limitCount: 5 }),
             ]);
-            setApiKeys(keys);
-            setUsage(todayUsage);
-            setRecentLogs(logs);
+            if (keysResult.status === 'fulfilled') setApiKeys(keysResult.value);
+            else console.warn('Failed to load API keys:', keysResult.reason);
+
+            if (usageResult.status === 'fulfilled') setUsage(usageResult.value);
+            else console.warn('Failed to load usage:', usageResult.reason);
+
+            if (logsResult.status === 'fulfilled') setRecentLogs(logsResult.value);
+            else console.warn('Failed to load QA logs:', logsResult.reason);
         } catch (err) {
             console.error('Failed to load dashboard data:', err);
         } finally {
@@ -49,9 +54,19 @@ export default function DashboardPage() {
     }, [loadData]);
 
     const getProviderLimits = (provider: AIProvider) => {
+        const defaults = PROVIDER_CONFIG[provider].defaultLimits;
         const key = apiKeys.find(k => k.provider === provider);
-        if (key) return key.limits;
-        return PROVIDER_CONFIG[provider].defaultLimits;
+        if (key) {
+            // Merge: use key limits if set, otherwise fall back to defaults
+            return {
+                rpm: key.limits.rpm || defaults.rpm,
+                rpd: key.limits.rpd || defaults.rpd,
+                tpm: key.limits.tpm || defaults.tpm,
+                tpd: key.limits.tpd || defaults.tpd,
+                dailyTokenLimit: key.limits.dailyTokenLimit || defaults.dailyTokenLimit,
+            };
+        }
+        return defaults;
     };
 
     const getProviderQuota = (provider: AIProvider) => {

@@ -15,7 +15,8 @@ interface QuotaCheckResponse {
     error?: string;
 }
 
-// Groq: minimal chat completion call to read accurate global rate limit headers
+// Groq: minimal chat completion call to read rate limit headers
+// Groq: request headers are daily limits, token headers are per-minute.
 async function checkGroqQuota(apiKey: string): Promise<QuotaCheckResponse> {
     try {
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -37,8 +38,10 @@ async function checkGroqQuota(apiKey: string): Promise<QuotaCheckResponse> {
                 return {
                     remainingRequests: 0,
                     remainingTokens: 0,
+                    // Request limits are daily
                     limitRequests: parseHeaderInt(res.headers.get('x-ratelimit-limit-requests')),
-                    limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens')),
+                    // Token limits are per-minute; use configured daily default
+                    limitTokens: 500000,
                     isValid: true,
                     checkedAt: new Date().toISOString(),
                 };
@@ -50,11 +53,27 @@ async function checkGroqQuota(apiKey: string): Promise<QuotaCheckResponse> {
             };
         }
 
+        // Request headers are daily limits (e.g. 14400/day)
+        const remainingRequests = parseHeaderInt(res.headers.get('x-ratelimit-remaining-requests'));
+        const limitRequests = parseHeaderInt(res.headers.get('x-ratelimit-limit-requests'));
+        // Token headers are per-minute (e.g. 6000/min) — not useful for daily display
+        // We don't have daily token limit from Groq, use configured default
+        const remainingTokensPerMin = parseHeaderInt(res.headers.get('x-ratelimit-remaining-tokens'));
+        const limitTokensPerMin = parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens'));
+
+        // Estimate daily token remaining ratio from per-minute data
+        const dailyTokenLimit = 500000; // Groq free tier default
+        let remainingTokensDaily: number | undefined;
+        if (remainingTokensPerMin !== undefined && limitTokensPerMin) {
+            const ratio = remainingTokensPerMin / limitTokensPerMin;
+            remainingTokensDaily = Math.round(ratio * dailyTokenLimit);
+        }
+
         return {
-            remainingRequests: parseHeaderInt(res.headers.get('x-ratelimit-remaining-requests')),
-            remainingTokens: parseHeaderInt(res.headers.get('x-ratelimit-remaining-tokens')),
-            limitRequests: parseHeaderInt(res.headers.get('x-ratelimit-limit-requests')),
-            limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens')),
+            remainingRequests,
+            remainingTokens: remainingTokensDaily,
+            limitRequests,
+            limitTokens: dailyTokenLimit,
             isValid: true,
             checkedAt: new Date().toISOString(),
         };
@@ -67,7 +86,8 @@ async function checkGroqQuota(apiKey: string): Promise<QuotaCheckResponse> {
     }
 }
 
-// Cerebras: minimal chat completion call to read accurate global rate limit headers
+// Cerebras: minimal chat completion call to read rate limit headers
+// Cerebras provides daily + minute + hourly headers. We use daily.
 async function checkCerebrasQuota(apiKey: string): Promise<QuotaCheckResponse> {
     try {
         const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
@@ -89,7 +109,7 @@ async function checkCerebrasQuota(apiKey: string): Promise<QuotaCheckResponse> {
                     remainingRequests: 0,
                     remainingTokens: 0,
                     limitRequests: parseHeaderInt(res.headers.get('x-ratelimit-limit-requests-day')),
-                    limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens-minute')),
+                    limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens-day')),
                     isValid: true,
                     checkedAt: new Date().toISOString(),
                 };
@@ -103,9 +123,9 @@ async function checkCerebrasQuota(apiKey: string): Promise<QuotaCheckResponse> {
 
         return {
             remainingRequests: parseHeaderInt(res.headers.get('x-ratelimit-remaining-requests-day')),
-            remainingTokens: parseHeaderInt(res.headers.get('x-ratelimit-remaining-tokens-minute')),
+            remainingTokens: parseHeaderInt(res.headers.get('x-ratelimit-remaining-tokens-day')),
             limitRequests: parseHeaderInt(res.headers.get('x-ratelimit-limit-requests-day')),
-            limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens-minute')),
+            limitTokens: parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens-day')),
             isValid: true,
             checkedAt: new Date().toISOString(),
         };
@@ -118,15 +138,31 @@ async function checkCerebrasQuota(apiKey: string): Promise<QuotaCheckResponse> {
     }
 }
 
-// Gemini: use model list API (no token consumption)
+// Gemini: use model list API (no token consumption, fast)
+// Gemini doesn't expose rate limit headers, so we validate the key
+// and use the free tier defaults for display.
 async function checkGeminiQuota(apiKey: string): Promise<QuotaCheckResponse> {
     try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+
         const res = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
-            { method: 'GET' }
+            { method: 'GET', signal: controller.signal }
         );
+        clearTimeout(timeout);
 
         if (!res.ok) {
+            if (res.status === 429) {
+                return {
+                    remainingRequests: 0,
+                    remainingTokens: 0,
+                    limitRequests: 1500,
+                    limitTokens: 50000000,
+                    isValid: true,
+                    checkedAt: new Date().toISOString(),
+                };
+            }
             const errData = await res.json().catch(() => ({}));
             const errorMsg = errData?.error?.message || `HTTP ${res.status}`;
             return {
@@ -136,9 +172,10 @@ async function checkGeminiQuota(apiKey: string): Promise<QuotaCheckResponse> {
             };
         }
 
-        // Gemini doesn't return rate limit headers on the models endpoint.
-        // We can only confirm the key is valid.
+        // Key is valid. Use default free tier limits.
         return {
+            limitRequests: 1500,
+            limitTokens: 50000000,
             isValid: true,
             checkedAt: new Date().toISOString(),
         };
