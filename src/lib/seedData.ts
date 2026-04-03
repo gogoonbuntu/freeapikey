@@ -25,14 +25,16 @@ const DEFAULT_KEYS: Array<{
 
 export async function seedInitialData(uid: string): Promise<boolean> {
     try {
-        // Check if user already has keys
+        // Check existing keys per provider to avoid duplicates
         const existingKeys = await getApiKeys(uid);
-        if (existingKeys.length > 0) {
-            return false; // Already seeded
-        }
+        const existingProviders = new Set(existingKeys.map(k => k.provider));
 
-        // Add default API keys
+        let seeded = false;
         for (const keyData of DEFAULT_KEYS) {
+            // Skip if no key in env or provider already has a key
+            if (!keyData.key || existingProviders.has(keyData.provider)) {
+                continue;
+            }
             const config = PROVIDER_CONFIG[keyData.provider];
             await addApiKey(uid, {
                 provider: keyData.provider,
@@ -41,10 +43,11 @@ export async function seedInitialData(uid: string): Promise<boolean> {
                 limits: config.defaultLimits,
                 isActive: true,
             });
+            seeded = true;
         }
 
-        console.log('✅ Initial data seeded for user:', uid);
-        return true;
+        if (seeded) console.log('✅ Initial data seeded for user:', uid);
+        return seeded;
     } catch (err) {
         console.error('Failed to seed initial data:', err);
         return false;

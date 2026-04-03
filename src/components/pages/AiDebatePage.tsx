@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { getApiKeys } from '@/lib/firestore';
+import { getApiKeys, addQALog, addUsageRecord } from '@/lib/firestore';
 import { AIProvider, PROVIDER_CONFIG, ApiKey } from '@/lib/types';
+import { checkSensitiveData } from '@/lib/aiProxy';
 import { Play, Square, RotateCcw, Bot } from 'lucide-react';
 
 interface Message {
@@ -59,7 +60,7 @@ export default function AiDebatePage() {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    const callModel = async (provider: AIProvider, model: string, prompt: string): Promise<{ text: string; latencyMs: number }> => {
+    const callModel = async (provider: AIProvider, model: string, prompt: string): Promise<{ text: string; latencyMs: number; totalTokens: number; inputTokens: number; outputTokens: number }> => {
         const key = apiKeys.find(k => k.provider === provider && k.isActive);
         if (!key) throw new Error(`${PROVIDER_CONFIG[provider].name} 키가 없습니다`);
         const res = await fetch('/api/validate', {
@@ -69,7 +70,13 @@ export default function AiDebatePage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error?.message || 'API 오류');
-        return { text: data.text, latencyMs: data.latencyMs };
+        return {
+            text: data.text,
+            latencyMs: data.latencyMs,
+            totalTokens: data.totalTokens || 0,
+            inputTokens: data.inputTokens || 0,
+            outputTokens: data.outputTokens || 0,
+        };
     };
 
     const handleStart = async () => {
@@ -106,7 +113,7 @@ export default function AiDebatePage() {
                 }
 
                 setCurrentTurn(turn + 1);
-                const { text, latencyMs } = await callModel(currentProvider, currentModel, prompt);
+                const { text, latencyMs, totalTokens, inputTokens, outputTokens } = await callModel(currentProvider, currentModel, prompt);
 
                 const msg: Message = {
                     role,
@@ -117,6 +124,36 @@ export default function AiDebatePage() {
                 };
                 history = [...history, msg];
                 setMessages(prev => [...prev, msg]);
+
+                // Record usage to Firestore
+                if (user) {
+                    const today = new Date().toISOString().split('T')[0];
+                    try {
+                        await Promise.allSettled([
+                            addQALog(user.uid, {
+                                projectId: 'ai-debate',
+                                provider: currentProvider,
+                                model: currentModel,
+                                prompt,
+                                response: text,
+                                inputTokens,
+                                outputTokens,
+                                totalTokens,
+                                latencyMs,
+                                hasSensitiveData: checkSensitiveData(prompt) || checkSensitiveData(text),
+                                fallbackUsed: false,
+                            }),
+                            addUsageRecord(user.uid, {
+                                provider: currentProvider,
+                                date: today,
+                                requestCount: 1,
+                                tokenCount: totalTokens,
+                            }),
+                        ]);
+                    } catch (e) {
+                        console.warn('Failed to record debate usage:', e);
+                    }
+                }
 
                 // Small pause between turns
                 await new Promise(r => setTimeout(r, 500));
