@@ -13,6 +13,22 @@ interface QuotaCheckResponse {
     isValid: boolean;
     checkedAt: string;
     error?: string;
+    // Gemini-specific: parsed from 429 error body
+    quotaExhausted?: boolean;
+    retryAfterSec?: number;
+    isDailyExhausted?: boolean;
+    isMinuteExhausted?: boolean;
+    quotaViolations?: Array<{
+        metric: string;
+        quotaId: string;
+        model?: string;
+    }>;
+    // Gemini probe: usageMetadata from a successful 1-token call
+    probeUsage?: {
+        promptTokenCount: number;
+        candidatesTokenCount: number;
+        totalTokenCount: number;
+    };
 }
 
 // Groq: minimal chat completion call to read rate limit headers
@@ -138,22 +154,60 @@ async function checkCerebrasQuota(apiKey: string): Promise<QuotaCheckResponse> {
     }
 }
 
-// Gemini: use model list API (no token consumption, fast)
-// Gemini doesn't expose rate limit headers, so we validate the key
-// and use the free tier defaults for display.
+// Gemini: use actual generateContent call (1 token) to probe real quota status.
+// On success: key valid + usageMetadata for tokens consumed.
+// On 429: parse QuotaFailure violations from error body for exact quota info.
+// Gemini does NOT provide rate-limit headers — this probing approach is the
+// only way to get real-time quota status directly from Google's servers.
 async function checkGeminiQuota(apiKey: string): Promise<QuotaCheckResponse> {
     try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
 
+        // Actually call generateContent with minimal tokens
         const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
-            { method: 'GET', signal: controller.signal }
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: '.' }] }],
+                    generationConfig: { maxOutputTokens: 1 },
+                }),
+                signal: controller.signal,
+            }
         );
         clearTimeout(timeout);
 
         if (!res.ok) {
             if (res.status === 429) {
+                // Parse the 429 error body for detailed quota info
+                const errData = await res.json().catch(() => ({}));
+                const errMsg = errData?.error?.message || '';
+                const violations = errData?.error?.details?.find(
+                    (d: any) => d['@type']?.includes('QuotaFailure')
+                )?.violations || [];
+
+                // Extract retry delay from error message
+                const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
+                const retryAfterSec = retryMatch ? parseFloat(retryMatch[1]) : undefined;
+
+                // Parse quota metrics from violations
+                let dailyRequestLimit: number | undefined;
+                let minuteRequestLimit: number | undefined;
+                let isDailyExhausted = false;
+                let isMinuteExhausted = false;
+
+                for (const v of violations) {
+                    const qid = v.quotaId || '';
+                    if (qid.includes('PerDay')) {
+                        isDailyExhausted = true;
+                    }
+                    if (qid.includes('PerMinute')) {
+                        isMinuteExhausted = true;
+                    }
+                }
+
                 return {
                     remainingRequests: 0,
                     remainingTokens: 0,
@@ -161,8 +215,19 @@ async function checkGeminiQuota(apiKey: string): Promise<QuotaCheckResponse> {
                     limitTokens: 50000000,
                     isValid: true,
                     checkedAt: new Date().toISOString(),
+                    quotaExhausted: true,
+                    retryAfterSec,
+                    isDailyExhausted,
+                    isMinuteExhausted,
+                    quotaViolations: violations.map((v: any) => ({
+                        metric: v.quotaMetric,
+                        quotaId: v.quotaId,
+                        model: v.quotaDimensions?.model,
+                    })),
                 };
             }
+
+            // Other errors (401 invalid key, etc.)
             const errData = await res.json().catch(() => ({}));
             const errorMsg = errData?.error?.message || `HTTP ${res.status}`;
             return {
@@ -172,12 +237,26 @@ async function checkGeminiQuota(apiKey: string): Promise<QuotaCheckResponse> {
             };
         }
 
-        // Key is valid. Use default free tier limits.
+        // Success! Key is valid and has quota remaining.
+        // Parse usageMetadata for token consumption details.
+        const data = await res.json();
+        const usage = data.usageMetadata || {};
+
         return {
+            // Gemini doesn't provide "remaining" counts in headers,
+            // but a successful call proves quota is available.
+            // We return the limits and mark remaining as "available" (non-zero).
             limitRequests: 1500,
             limitTokens: 50000000,
             isValid: true,
             checkedAt: new Date().toISOString(),
+            quotaExhausted: false,
+            // Include the actual token usage from this probe call
+            probeUsage: {
+                promptTokenCount: usage.promptTokenCount || 0,
+                candidatesTokenCount: usage.candidatesTokenCount || 0,
+                totalTokenCount: usage.totalTokenCount || 0,
+            },
         };
     } catch (err) {
         return {
