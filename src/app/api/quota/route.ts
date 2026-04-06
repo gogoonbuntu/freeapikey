@@ -470,7 +470,7 @@ async function checkOpenAICompatQuota(apiKey: string, provider: AIProvider): Pro
             headers['X-Title'] = 'FreeAPI Hub';
         }
 
-        const res = await fetch(config.baseUrl, {
+        const res = await fetch(`${config.baseUrl}/chat/completions`, {
             method: 'POST',
             headers,
             body: JSON.stringify({

@@ -16,8 +16,8 @@ function buildGeminiRequest(model: string, key: string, prompt: string) {
 // Build an OpenAI-compatible API request (Groq, Cerebras, SambaNova, OpenRouter, Mistral)
 function buildOpenAIRequest(provider: AIProvider, model: string, key: string, prompt: string) {
     const config = PROVIDER_CONFIG[provider];
-    const url = config.baseUrl;
-    if (!url) throw new Error(`No baseUrl for provider: ${provider}`);
+    const url = `${config.baseUrl}/chat/completions`;
+    if (!config.baseUrl) throw new Error(`No baseUrl for provider: ${provider}`);
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
