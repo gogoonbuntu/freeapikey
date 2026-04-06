@@ -161,12 +161,26 @@ export const PROVIDER_CONFIG: Record<AIProvider, {
         name: 'OpenRouter',
         color: '#6366F1',
         gradient: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+        // Account-wide limits (NOT per-model). All free models share 50 RPD.
         defaultLimits: { rpm: 20, rpd: 50, tpm: 200000, tpd: 10000000 },
-        models: ['openrouter/auto', 'meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen3-32b:free'],
+        models: [
+            'openrouter/free',                                    // Auto-router (picks best free model)
+            'qwen/qwen3.6-plus:free',                             // 1M ctx, top reasoning
+            'qwen/qwen3-coder:free',                              // 262K ctx, coding specialist
+            'nvidia/nemotron-3-super-120b-a12b:free',             // 262K ctx, 120B MoE
+            'stepfun/step-3.5-flash:free',                        // 256K ctx, fast
+            'minimax/minimax-m2.5:free',                          // 196K ctx
+            'meta-llama/llama-3.3-70b-instruct:free',             // 65K ctx, classic
+            'google/gemma-3-27b-it:free',                         // 131K ctx
+            'z-ai/glm-4.5-air:free',                              // 131K ctx
+            'openai/gpt-oss-120b:free',                           // 131K ctx, GPT open-source
+            'nousresearch/hermes-3-llama-3.1-405b:free',          // 131K ctx, 405B
+            'nvidia/nemotron-nano-12b-v2-vl:free',                // 128K ctx, vision
+        ],
         baseUrl: 'https://openrouter.ai/api/v1',
         costPer1MInput: 0,
         costPer1MOutput: 0,
-        note: '50 RPD (free). $10+ credit purchase unlocks 1000 RPD. Use :free suffix for free models.',
+        note: 'Account-wide 50 RPD (free). $10+ purchase → 1000 RPD. 28 free models available. Use :free suffix.',
     },
     mistral: {
         name: 'Mistral AI',
