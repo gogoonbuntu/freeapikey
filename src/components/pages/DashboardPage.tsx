@@ -79,12 +79,16 @@ export default function DashboardPage() {
 
     const getStatus = (provider: AIProvider): 'normal' | 'warning' | 'exceeded' => {
         const quota = getProviderQuota(provider);
+        // Check quotaExhausted flag (e.g. Gemini where all models are exhausted)
+        if (quota && (quota as any).quotaExhausted === true) return 'exceeded';
         if (quota && quota.remainingRequests !== undefined && quota.limitRequests) {
             const usedPct = 1 - (quota.remainingRequests / quota.limitRequests);
             if (usedPct >= 1) return 'exceeded';
             if (usedPct >= 0.7) return 'warning';
             return 'normal';
         }
+        // If we have quota data and it's valid, but no remaining info (e.g. Gemini success), assume normal
+        if (quota && quota.isValid && (quota as any).quotaExhausted === false) return 'normal';
         // Fallback to usage-based estimation
         const limits = getProviderLimits(provider);
         const u = usage[provider];
@@ -230,14 +234,17 @@ export default function DashboardPage() {
                 {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(provider => {
                     const limits = getProviderLimits(provider);
                     const quota = getProviderQuota(provider);
+                    // Use real quota limits when available, otherwise fallback to config defaults
+                    const effectiveMaxReqs = quota?.limitRequests || limits.rpd || 0;
+                    const effectiveMaxTokens = quota?.limitTokens || limits.tpd || limits.dailyTokenLimit || 0;
                     return (
                         <UsageCard
                             key={provider}
                             provider={provider}
                             currentRequests={usage[provider].requests}
                             currentTokens={usage[provider].tokens}
-                            maxRequests={limits.rpd || 0}
-                            maxTokens={limits.tpd || limits.dailyTokenLimit || 0}
+                            maxRequests={effectiveMaxReqs}
+                            maxTokens={effectiveMaxTokens}
                             status={getStatus(provider)}
                             remainingRequests={quota?.remainingRequests}
                             remainingTokens={quota?.remainingTokens}
@@ -245,6 +252,8 @@ export default function DashboardPage() {
                             limitTokens={quota?.limitTokens}
                             quotaCheckedAt={quota?.checkedAt}
                             quotaIsValid={quota?.isValid}
+                            quotaExhausted={(quota as any)?.quotaExhausted}
+                            perModelQuota={(quota as any)?.perModelQuota}
                         />
                     );
                 })}

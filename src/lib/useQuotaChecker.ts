@@ -16,7 +16,10 @@ interface QuotaCheckResult {
     nextCheckIn: number; // seconds until next auto-check
 }
 
-async function fetchQuota(provider: string, apiKey: string): Promise<QuotaStatus> {
+async function fetchQuota(provider: string, apiKey: string): Promise<QuotaStatus & {
+    perModelQuota?: Record<string, any>;
+    quotaExhausted?: boolean;
+}> {
     try {
         const res = await fetch('/api/quota', {
             method: 'POST',
@@ -37,6 +40,8 @@ async function fetchQuota(provider: string, apiKey: string): Promise<QuotaStatus
             isValid: data.isValid,
             checkedAt: new Date(data.checkedAt),
             error: data.error,
+            perModelQuota: data.perModelQuota,
+            quotaExhausted: data.quotaExhausted,
         };
     } catch (err) {
         return {

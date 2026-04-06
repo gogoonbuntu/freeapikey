@@ -1,7 +1,16 @@
 'use client';
 
 import React from 'react';
-import { AIProvider, PROVIDER_CONFIG, QuotaStatus } from '@/lib/types';
+import { AIProvider, PROVIDER_CONFIG } from '@/lib/types';
+
+interface PerModelQuota {
+    limitRequests: number;
+    limitTokens: number;
+    remainingRequests?: number;
+    remainingTokens?: number;
+    isAvailable: boolean;
+    error?: string;
+}
 
 interface UsageCardProps {
     provider: AIProvider;
@@ -17,6 +26,9 @@ interface UsageCardProps {
     limitTokens?: number;
     quotaCheckedAt?: Date;
     quotaIsValid?: boolean;
+    quotaExhausted?: boolean;
+    // Per-model breakdown
+    perModelQuota?: Record<string, PerModelQuota>;
 }
 
 export default function UsageCard({
@@ -32,11 +44,14 @@ export default function UsageCard({
     limitTokens,
     quotaCheckedAt,
     quotaIsValid,
+    quotaExhausted,
+    perModelQuota,
 }: UsageCardProps) {
     const config = PROVIDER_CONFIG[provider];
 
     // Use real quota data if available, otherwise use tracked usage
     const hasQuotaData = remainingRequests !== undefined || remainingTokens !== undefined;
+    const hasPerModelData = perModelQuota && Object.keys(perModelQuota).length > 0;
 
     const requestPercent = (() => {
         if (remainingRequests !== undefined && limitRequests) {
@@ -153,6 +168,56 @@ export default function UsageCard({
                             </div>
                         )}
                     </div>
+                </div>
+            )}
+
+            {/* Per-Model Quota Breakdown */}
+            {hasPerModelData && (
+                <div style={{
+                    padding: '10px 12px',
+                    marginBottom: 12,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(139,92,246,0.04)',
+                    border: '1px solid rgba(139,92,246,0.08)',
+                }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8, fontWeight: 600 }}>
+                        🔍 모델별 할당량
+                    </div>
+                    {Object.entries(perModelQuota!).map(([model, quota]) => (
+                        <div key={model} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 0',
+                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: '50%',
+                                    background: quota.isAvailable ? 'var(--accent-green)' : 'var(--accent-red)',
+                                }} />
+                                <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                    {model}
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {quota.isAvailable ? (
+                                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                        {quota.remainingRequests !== undefined
+                                            ? `${formatNumber(quota.remainingRequests)} / ${formatNumber(quota.limitRequests)} req`
+                                            : `${formatNumber(quota.limitRequests)} RPD`
+                                        }
+                                    </span>
+                                ) : (
+                                    <span style={{ fontSize: 10, color: 'var(--accent-red)' }}>
+                                        {quota.error || 'unavailable'}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
 
