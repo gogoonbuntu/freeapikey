@@ -9,6 +9,7 @@ import ApiKeysPage from '@/components/pages/ApiKeysPage';
 import ProjectsPage from '@/components/pages/ProjectsPage';
 import QALogsPage from '@/components/pages/QALogsPage';
 import PlaygroundPage from '@/components/pages/PlaygroundPage';
+import ModelExplorerPage from '@/components/pages/ModelExplorerPage';
 import AiDebatePage from '@/components/pages/AiDebatePage';
 
 export default function AppShell() {
@@ -45,6 +46,8 @@ export default function AppShell() {
                 return <QALogsPage />;
             case 'playground':
                 return <PlaygroundPage />;
+            case 'model-explorer':
+                return <ModelExplorerPage />;
             case 'ai-debate':
                 return <AiDebatePage />;
             default:

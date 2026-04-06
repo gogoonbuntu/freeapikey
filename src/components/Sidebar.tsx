@@ -9,6 +9,7 @@ import {
     MessageSquareText,
     FlaskConical,
     Swords,
+    Telescope,
     LogOut,
     Menu,
     X,
@@ -24,6 +25,7 @@ const navItems = [
     { id: 'api-keys', label: 'API 키 관리', icon: Key, section: 'MANAGE' },
     { id: 'projects', label: '프로젝트', icon: FolderKanban, section: 'MANAGE' },
     { id: 'qa-logs', label: 'QA 로그', icon: MessageSquareText, section: 'ANALYZE' },
+    { id: 'model-explorer', label: '모델 탐색기', icon: Telescope, section: 'TOOLS' },
     { id: 'playground', label: '플레이그라운드', icon: FlaskConical, section: 'TOOLS' },
     { id: 'ai-debate', label: 'AI vs AI 토론', icon: Swords, section: 'TOOLS' },
 ];
