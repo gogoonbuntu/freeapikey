@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AIProvider, PROVIDER_CONFIG } from '@/lib/types';
 
-// Build a Gemini API request
-function buildGeminiRequest(model: string, key: string, prompt: string) {
+// Build a Gemini API request (supports optional image)
+function buildGeminiRequest(model: string, key: string, prompt: string, image?: string, mimeType?: string) {
+    const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+    if (image && mimeType) {
+        parts.push({ inline_data: { mime_type: mimeType, data: image } });
+    }
     return {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         headers: { 'Content-Type': 'application/json' } as Record<string, string>,
         body: {
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [{ parts }],
             generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
         },
     };
 }
 
-// Build an OpenAI-compatible API request (Groq, Cerebras, SambaNova, OpenRouter, Mistral)
-function buildOpenAIRequest(provider: AIProvider, model: string, key: string, prompt: string) {
+// Build an OpenAI-compatible API request (supports optional image)
+function buildOpenAIRequest(provider: AIProvider, model: string, key: string, prompt: string, image?: string, mimeType?: string) {
     const config = PROVIDER_CONFIG[provider];
     const url = `${config.baseUrl}/chat/completions`;
     if (!config.baseUrl) throw new Error(`No baseUrl for provider: ${provider}`);
@@ -30,12 +34,21 @@ function buildOpenAIRequest(provider: AIProvider, model: string, key: string, pr
         headers['X-Title'] = 'FreeAPI Hub';
     }
 
+    // Build message content (text-only or multimodal)
+    let content: string | Array<Record<string, unknown>> = prompt;
+    if (image && mimeType) {
+        content = [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image}` } },
+        ];
+    }
+
     return {
         url,
         headers,
         body: {
             model,
-            messages: [{ role: 'user', content: prompt }],
+            messages: [{ role: 'user', content }],
             max_tokens: 1024,
             temperature: 0.7,
         },
@@ -44,7 +57,7 @@ function buildOpenAIRequest(provider: AIProvider, model: string, key: string, pr
 
 export async function POST(req: NextRequest) {
     try {
-        const { provider, key, model, prompt } = await req.json();
+        const { provider, key, model, prompt, image, mimeType } = await req.json();
 
         if (!provider || !key) {
             return NextResponse.json({ error: { message: 'Provider and Key are required' } }, { status: 400 });
@@ -62,10 +75,10 @@ export async function POST(req: NextRequest) {
         // Build request based on provider
         let reqConfig: { url: string; headers: Record<string, string>; body: any };
         if (provider === 'gemini') {
-            reqConfig = buildGeminiRequest(selectedModel, trimmedKey, userPrompt);
+            reqConfig = buildGeminiRequest(selectedModel, trimmedKey, userPrompt, image, mimeType);
         } else if (config.baseUrl) {
             // All OpenAI-compatible providers
-            reqConfig = buildOpenAIRequest(provider as AIProvider, selectedModel, trimmedKey, userPrompt);
+            reqConfig = buildOpenAIRequest(provider as AIProvider, selectedModel, trimmedKey, userPrompt, image, mimeType);
         } else {
             return NextResponse.json({ error: { message: 'Unsupported provider' } }, { status: 400 });
         }
