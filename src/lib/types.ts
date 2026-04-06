@@ -164,18 +164,10 @@ export const PROVIDER_CONFIG: Record<AIProvider, {
         // Account-wide limits (NOT per-model). All free models share 50 RPD.
         defaultLimits: { rpm: 20, rpd: 50, tpm: 200000, tpd: 10000000 },
         models: [
-            'openrouter/free',                                    // Auto-router (picks best free model)
-            'qwen/qwen3.6-plus:free',                             // 1M ctx, top reasoning
-            'qwen/qwen3-coder:free',                              // 262K ctx, coding specialist
-            'nvidia/nemotron-3-super-120b-a12b:free',             // 262K ctx, 120B MoE
-            'stepfun/step-3.5-flash:free',                        // 256K ctx, fast
-            'minimax/minimax-m2.5:free',                          // 196K ctx
-            'meta-llama/llama-3.3-70b-instruct:free',             // 65K ctx, classic
-            'google/gemma-3-27b-it:free',                         // 131K ctx
-            'z-ai/glm-4.5-air:free',                              // 131K ctx
-            'openai/gpt-oss-120b:free',                           // 131K ctx, GPT open-source
-            'nousresearch/hermes-3-llama-3.1-405b:free',          // 131K ctx, 405B
-            'nvidia/nemotron-nano-12b-v2-vl:free',                // 128K ctx, vision
+            'qwen/qwen3.6-plus:free',                             // 범용/추론 (1M ctx)
+            'qwen/qwen3-coder:free',                              // 코딩 (262K ctx)
+            'meta-llama/llama-3.3-70b-instruct:free',             // 대화/지시 (70B, 65K ctx)
+            'nvidia/nemotron-nano-12b-v2-vl:free',                // 비전/멀티모달 (128K ctx)
         ],
         baseUrl: 'https://openrouter.ai/api/v1',
         costPer1MInput: 0,
