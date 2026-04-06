@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getApiKeys, addApiKey, updateApiKey, deleteApiKey } from '@/lib/firestore';
-import { ApiKey, AIProvider, PROVIDER_CONFIG } from '@/lib/types';
+import { ApiKey, AIProvider, PROVIDER_CONFIG, ACTIVE_PROVIDERS } from '@/lib/types';
 import { useQuotaChecker } from '@/lib/useQuotaChecker';
 import { Plus, Edit2, Trash2, Eye, EyeOff, Key, AlertTriangle, Terminal, Check, Copy, Play, RefreshCw } from 'lucide-react';
 
@@ -20,7 +20,7 @@ export default function ApiKeysPage() {
     const [modalError, setModalError] = useState('');
 
     // Form state
-    const [formProvider, setFormProvider] = useState<AIProvider>('gemini');
+    const [formProvider, setFormProvider] = useState<AIProvider>('groq');
     const [formKey, setFormKey] = useState('');
     const [formLabel, setFormLabel] = useState('');
     const [formRPM, setFormRPM] = useState('');
@@ -64,10 +64,10 @@ export default function ApiKeysPage() {
 
     const openAdd = () => {
         setEditingKey(null);
-        setFormProvider('gemini');
+        setFormProvider('groq');
         setFormKey('');
         setFormLabel('');
-        const defaults = PROVIDER_CONFIG.gemini.defaultLimits;
+        const defaults = PROVIDER_CONFIG.groq.defaultLimits;
         setFormRPM(String(defaults.rpm || ''));
         setFormRPD(String(defaults.rpd || ''));
         setFormTPD(String(defaults.tpd || defaults.dailyTokenLimit || ''));
@@ -451,9 +451,9 @@ export default function ApiKeysPage() {
                                 value={formProvider}
                                 onChange={e => handleProviderChange(e.target.value as AIProvider)}
                             >
-                                <option value="gemini">Google Gemini</option>
-                                <option value="groq">Groq Cloud</option>
-                                <option value="cerebras">Cerebras</option>
+                                {ACTIVE_PROVIDERS.map(p => (
+                                    <option key={p} value={p}>{PROVIDER_CONFIG[p].name}</option>
+                                ))}
                                 <option value="custom">Custom</option>
                             </select>
                         </div>
@@ -553,25 +553,22 @@ function TestCurlModal({ apiKey, onClose }: { apiKey: ApiKey; onClose: () => voi
     const [testResult, setTestResult] = useState<{ status: 'idle' | 'loading' | 'success' | 'error'; data?: any; error?: string }>({ status: 'idle' });
 
     const getCurlCommand = () => {
-        const baseUrl = apiKey.provider === 'gemini'
-            ? `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_CONFIG[apiKey.provider].models[0]}:generateContent?key=${apiKey.key}`
-            : apiKey.provider === 'groq'
-                ? 'https://api.groq.com/openai/v1/chat/completions'
-                : 'https://api.cerebras.ai/v1/chat/completions';
-
         if (apiKey.provider === 'gemini') {
+            const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${PROVIDER_CONFIG[apiKey.provider].models[0]}:generateContent?key=${apiKey.key}`;
             return `curl "${baseUrl}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "contents": [{ "parts": [{ "text": "Hello, how are you?" }] }]
   }'`;
         }
+        const config = PROVIDER_CONFIG[apiKey.provider];
+        const baseUrl = config.baseUrl ? `${config.baseUrl}/chat/completions` : 'https://api.openai.com/v1/chat/completions';
 
         return `curl "${baseUrl}" \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey.key}" \\
   -d '{
-    "model": "${PROVIDER_CONFIG[apiKey.provider].models[0]}",
+    "model": "${config.models[0]}",
     "messages": [{ "role": "user", "content": "Hello, how are you?" }]
   }'`;
     };

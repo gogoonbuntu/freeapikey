@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import Sidebar from '@/components/Sidebar';
 import LoginPage from '@/components/LoginPage';
@@ -10,19 +10,10 @@ import ProjectsPage from '@/components/pages/ProjectsPage';
 import QALogsPage from '@/components/pages/QALogsPage';
 import PlaygroundPage from '@/components/pages/PlaygroundPage';
 import AiDebatePage from '@/components/pages/AiDebatePage';
-import { seedInitialData } from '@/lib/seedData';
 
 export default function AppShell() {
     const { user, loading } = useAuth();
     const [currentPage, setCurrentPage] = useState('dashboard');
-    const seeded = useRef(false);
-
-    useEffect(() => {
-        if (user && !seeded.current) {
-            seeded.current = true;
-            seedInitialData(user.uid);
-        }
-    }, [user]);
 
     if (loading) {
         return (

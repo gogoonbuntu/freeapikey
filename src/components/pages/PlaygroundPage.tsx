@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { checkSensitiveData, getAvailableModels, getDefaultModel } from '@/lib/aiProxy';
 import { addQALog, addUsageRecord, getProjects, getApiKeys } from '@/lib/firestore';
-import { AIProvider, PROVIDER_CONFIG, Project, ApiKey } from '@/lib/types';
+import { AIProvider, PROVIDER_CONFIG, Project, ApiKey, ACTIVE_PROVIDERS } from '@/lib/types';
 import { Send, RotateCcw, AlertTriangle, Zap, Clock, Hash, RefreshCw } from 'lucide-react';
 
 const EXAMPLE_PROMPTS = [
@@ -177,7 +177,7 @@ export default function PlaygroundPage() {
                             value={provider}
                             onChange={e => setProvider(e.target.value as AIProvider)}
                         >
-                            {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(p => (
+                            {ACTIVE_PROVIDERS.map(p => (
                                 <option key={p} value={p}>{PROVIDER_CONFIG[p].name}</option>
                             ))}
                         </select>

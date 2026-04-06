@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getApiKeys, addQALog, addUsageRecord } from '@/lib/firestore';
-import { AIProvider, PROVIDER_CONFIG, ApiKey } from '@/lib/types';
+import { AIProvider, PROVIDER_CONFIG, ApiKey, ACTIVE_PROVIDERS } from '@/lib/types';
 import { checkSensitiveData } from '@/lib/aiProxy';
 import { Play, Square, RotateCcw, Bot } from 'lucide-react';
 
@@ -27,9 +27,9 @@ const DEBATE_TOPICS = [
 export default function AiDebatePage() {
     const { user } = useAuth();
     const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-    const [providerA, setProviderA] = useState<AIProvider>('gemini');
+    const [providerA, setProviderA] = useState<AIProvider>('groq');
     const [modelA, setModelA] = useState('');
-    const [providerB, setProviderB] = useState<AIProvider>('groq');
+    const [providerB, setProviderB] = useState<AIProvider>('cerebras');
     const [modelB, setModelB] = useState('');
     const [topic, setTopic] = useState('');
     const [maxTurns, setMaxTurns] = useState(6);
@@ -197,7 +197,7 @@ export default function AiDebatePage() {
                         <div className="form-group" style={{ marginBottom: 8 }}>
                             <label>프로바이더</label>
                             <select className="form-select" value={providerA} onChange={e => setProviderA(e.target.value as AIProvider)}>
-                                {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(p => (
+                                {ACTIVE_PROVIDERS.map(p => (
                                     <option key={p} value={p}>{PROVIDER_CONFIG[p].name}</option>
                                 ))}
                             </select>
@@ -218,7 +218,7 @@ export default function AiDebatePage() {
                         <div className="form-group" style={{ marginBottom: 8 }}>
                             <label>프로바이더</label>
                             <select className="form-select" value={providerB} onChange={e => setProviderB(e.target.value as AIProvider)}>
-                                {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(p => (
+                                {ACTIVE_PROVIDERS.map(p => (
                                     <option key={p} value={p}>{PROVIDER_CONFIG[p].name}</option>
                                 ))}
                             </select>

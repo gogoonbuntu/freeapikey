@@ -1,6 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AIProvider, PROVIDER_CONFIG } from '@/lib/types';
 
+// Build a Gemini API request
+function buildGeminiRequest(model: string, key: string, prompt: string) {
+    return {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        headers: { 'Content-Type': 'application/json' } as Record<string, string>,
+        body: {
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+        },
+    };
+}
+
+// Build an OpenAI-compatible API request (Groq, Cerebras, SambaNova, OpenRouter, Mistral)
+function buildOpenAIRequest(provider: AIProvider, model: string, key: string, prompt: string) {
+    const config = PROVIDER_CONFIG[provider];
+    const url = config.baseUrl;
+    if (!url) throw new Error(`No baseUrl for provider: ${provider}`);
+
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`,
+    };
+
+    // OpenRouter requires extra headers
+    if (provider === 'openrouter') {
+        headers['HTTP-Referer'] = 'https://freeapi-hub.vercel.app';
+        headers['X-Title'] = 'FreeAPI Hub';
+    }
+
+    return {
+        url,
+        headers,
+        body: {
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 1024,
+            temperature: 0.7,
+        },
+    };
+}
+
 export async function POST(req: NextRequest) {
     try {
         const { provider, key, model, prompt } = await req.json();
@@ -10,51 +51,82 @@ export async function POST(req: NextRequest) {
         }
 
         const trimmedKey = key.trim();
-        const selectedModel = model || PROVIDER_CONFIG[provider as AIProvider]?.models[0];
+        const config = PROVIDER_CONFIG[provider as AIProvider];
+        if (!config) {
+            return NextResponse.json({ error: { message: 'Unsupported provider' } }, { status: 400 });
+        }
+
+        const selectedModel = model || config.models[0];
         const userPrompt = prompt || 'Hello';
 
-        let url = '';
-        let headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        let body: any = {};
-
-        const start = Date.now();
-
+        // Build request based on provider
+        let reqConfig: { url: string; headers: Record<string, string>; body: any };
         if (provider === 'gemini') {
-            url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${trimmedKey}`;
-            body = {
-                contents: [{ parts: [{ text: userPrompt }] }],
-                generationConfig: { maxOutputTokens: 1024, temperature: 0.7 }
-            };
-        } else if (provider === 'groq') {
-            url = 'https://api.groq.com/openai/v1/chat/completions';
-            headers['Authorization'] = `Bearer ${trimmedKey}`;
-            body = {
-                model: selectedModel,
-                messages: [{ role: 'user', content: userPrompt }],
-                max_tokens: 1024,
-                temperature: 0.7
-            };
-        } else if (provider === 'cerebras') {
-            url = 'https://api.cerebras.ai/v1/chat/completions';
-            headers['Authorization'] = `Bearer ${trimmedKey}`;
-            body = {
-                model: selectedModel,
-                messages: [{ role: 'user', content: userPrompt }],
-                max_tokens: 1024,
-                temperature: 0.7
-            };
+            reqConfig = buildGeminiRequest(selectedModel, trimmedKey, userPrompt);
+        } else if (config.baseUrl) {
+            // All OpenAI-compatible providers
+            reqConfig = buildOpenAIRequest(provider as AIProvider, selectedModel, trimmedKey, userPrompt);
         } else {
             return NextResponse.json({ error: { message: 'Unsupported provider' } }, { status: 400 });
         }
 
-        const response = await fetch(url, {
+        const start = Date.now();
+
+        const response = await fetch(reqConfig.url, {
             method: 'POST',
-            headers,
-            body: JSON.stringify(body),
+            headers: reqConfig.headers,
+            body: JSON.stringify(reqConfig.body),
         });
 
         const latencyMs = Date.now() - start;
         const data = await response.json().catch(() => ({}));
+
+        // === Gemini 429 Auto-Fallback ===
+        if (!response.ok && response.status === 429 && provider === 'gemini') {
+            const fallbackModels = config.models.filter(m => m !== selectedModel);
+            for (const fallbackModel of fallbackModels) {
+                try {
+                    const fbReq = buildGeminiRequest(fallbackModel, trimmedKey, userPrompt);
+                    const fbStart = Date.now();
+                    const fbRes = await fetch(fbReq.url, {
+                        method: 'POST',
+                        headers: fbReq.headers,
+                        body: JSON.stringify(fbReq.body),
+                    });
+                    const fbLatency = Date.now() - fbStart;
+                    const fbData = await fbRes.json().catch(() => ({}));
+
+                    if (fbRes.ok) {
+                        const text = fbData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                        const usage = fbData.usageMetadata || {};
+                        const inputTokens = usage.promptTokenCount || 0;
+                        const outputTokens = usage.candidatesTokenCount || 0;
+                        return NextResponse.json({
+                            success: true,
+                            text,
+                            provider,
+                            model: fallbackModel,
+                            inputTokens,
+                            outputTokens,
+                            totalTokens: inputTokens + outputTokens,
+                            latencyMs: fbLatency,
+                            fallbackUsed: true,
+                            fallbackFrom: selectedModel,
+                            fallbackReason: `${selectedModel} quota exceeded, used ${fallbackModel}`,
+                        });
+                    }
+                } catch {
+                    // Continue to next fallback
+                }
+            }
+            return NextResponse.json({
+                error: {
+                    message: data.error?.message || `API Error: ${response.status}`,
+                    details: data,
+                    allModelsExhausted: true,
+                }
+            }, { status: 429 });
+        }
 
         if (!response.ok) {
             return NextResponse.json({
@@ -76,6 +148,7 @@ export async function POST(req: NextRequest) {
             inputTokens = usage.promptTokenCount || 0;
             outputTokens = usage.candidatesTokenCount || 0;
         } else {
+            // All OpenAI-compatible providers use the same response format
             text = data.choices?.[0]?.message?.content || '';
             const usage = data.usage || {};
             inputTokens = usage.prompt_tokens || 0;

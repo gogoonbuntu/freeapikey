@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getApiKeys, getTodayUsage, getQALogs } from '@/lib/firestore';
-import { ApiKey, QALog, PROVIDER_CONFIG, AIProvider } from '@/lib/types';
+import { ApiKey, QALog, PROVIDER_CONFIG, AIProvider, ACTIVE_PROVIDERS } from '@/lib/types';
 import { useQuotaChecker } from '@/lib/useQuotaChecker';
 import UsageCard from '@/components/UsageCard';
 import GaugeChart from '@/components/GaugeChart';
@@ -12,11 +12,11 @@ import { Activity, Zap, Clock, TrendingUp, RefreshCw } from 'lucide-react';
 export default function DashboardPage() {
     const { user } = useAuth();
     const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-    const [usage, setUsage] = useState<Record<AIProvider, { requests: number; tokens: number }>>({
-        gemini: { requests: 0, tokens: 0 },
-        groq: { requests: 0, tokens: 0 },
-        cerebras: { requests: 0, tokens: 0 },
-        custom: { requests: 0, tokens: 0 },
+    const [usage, setUsage] = useState<Record<AIProvider, { requests: number; tokens: number }>>(() => {
+        const initial: any = {};
+        ACTIVE_PROVIDERS.forEach(p => { initial[p] = { requests: 0, tokens: 0 }; });
+        initial.custom = { requests: 0, tokens: 0 };
+        return initial;
     });
     const [recentLogs, setRecentLogs] = useState<QALog[]>([]);
     const [loading, setLoading] = useState(true);
@@ -37,7 +37,17 @@ export default function DashboardPage() {
             if (keysResult.status === 'fulfilled') setApiKeys(keysResult.value);
             else console.warn('Failed to load API keys:', keysResult.reason);
 
-            if (usageResult.status === 'fulfilled') setUsage(usageResult.value);
+            if (usageResult.status === 'fulfilled') {
+                // Merge with defaults so new providers always have entries
+                setUsage(prev => {
+                    const merged = { ...prev };
+                    const data = usageResult.value;
+                    for (const key of Object.keys(data)) {
+                        merged[key as AIProvider] = data[key as AIProvider];
+                    }
+                    return merged;
+                });
+            }
             else console.warn('Failed to load usage:', usageResult.reason);
 
             if (logsResult.status === 'fulfilled') setRecentLogs(logsResult.value);
@@ -91,7 +101,7 @@ export default function DashboardPage() {
         if (quota && quota.isValid && (quota as any).quotaExhausted === false) return 'normal';
         // Fallback to usage-based estimation
         const limits = getProviderLimits(provider);
-        const u = usage[provider];
+        const u = usage[provider] || { requests: 0, tokens: 0 };
         const rpd = limits.rpd || limits.dailyTokenLimit || 0;
         const current = limits.rpd ? u.requests : u.tokens;
         if (rpd === 0) return 'normal';
@@ -101,8 +111,8 @@ export default function DashboardPage() {
         return 'normal';
     };
 
-    const totalRequests = Object.values(usage).reduce((sum, u) => sum + u.requests, 0);
-    const totalTokens = Object.values(usage).reduce((sum, u) => sum + u.tokens, 0);
+    const totalRequests = Object.values(usage).reduce((sum, u) => sum + (u?.requests || 0), 0);
+    const totalTokens = Object.values(usage).reduce((sum, u) => sum + (u?.tokens || 0), 0);
 
     const formatCountdown = (seconds: number) => {
         const m = Math.floor(seconds / 60);
@@ -231,7 +241,7 @@ export default function DashboardPage() {
 
             {/* Provider Usage Cards */}
             <div className="grid-3" style={{ marginBottom: 24 }}>
-                {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(provider => {
+                {ACTIVE_PROVIDERS.map(provider => {
                     const limits = getProviderLimits(provider);
                     const quota = getProviderQuota(provider);
                     // Use real quota limits when available, otherwise fallback to config defaults
@@ -241,8 +251,8 @@ export default function DashboardPage() {
                         <UsageCard
                             key={provider}
                             provider={provider}
-                            currentRequests={usage[provider].requests}
-                            currentTokens={usage[provider].tokens}
+                            currentRequests={usage[provider]?.requests || 0}
+                            currentTokens={usage[provider]?.tokens || 0}
                             maxRequests={effectiveMaxReqs}
                             maxTokens={effectiveMaxTokens}
                             status={getStatus(provider)}
@@ -265,14 +275,14 @@ export default function DashboardPage() {
                     <h3 className="card-title">실시간 크레딧 잔량</h3>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 20, padding: '12px 0' }}>
-                    {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(provider => {
+                    {ACTIVE_PROVIDERS.map(provider => {
                         const quota = getProviderQuota(provider);
                         const limits = getProviderLimits(provider);
                         // Use real remaining data if available
                         const maxVal = quota?.limitRequests || limits.rpd || 0;
                         const usedVal = quota?.remainingRequests !== undefined
                             ? (quota.limitRequests || maxVal) - quota.remainingRequests
-                            : usage[provider].requests;
+                            : (usage[provider]?.requests || 0);
                         return (
                             <GaugeChart
                                 key={`req-${provider}`}
@@ -283,13 +293,13 @@ export default function DashboardPage() {
                             />
                         );
                     })}
-                    {(['gemini', 'groq', 'cerebras'] as AIProvider[]).map(provider => {
+                    {ACTIVE_PROVIDERS.map(provider => {
                         const quota = getProviderQuota(provider);
                         const limits = getProviderLimits(provider);
                         const tokenLimit = quota?.limitTokens || limits.tpd || limits.dailyTokenLimit || 0;
                         const usedTokens = quota?.remainingTokens !== undefined
                             ? (quota.limitTokens || tokenLimit) - quota.remainingTokens
-                            : usage[provider].tokens;
+                            : (usage[provider]?.tokens || 0);
                         return (
                             <GaugeChart
                                 key={`tok-${provider}`}

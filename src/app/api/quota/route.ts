@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AIProvider, PROVIDER_CONFIG } from '@/lib/types';
 
 interface QuotaCheckRequest {
     provider: string;
@@ -445,6 +446,96 @@ async function probeGeminiModel(apiKey: string, model: string): Promise<{
     }
 }
 
+// ============================================
+// Generic OpenAI-compatible quota check
+// Works for: SambaNova, OpenRouter, Mistral
+// Makes a minimal 1-token request and reads rate-limit headers.
+// ============================================
+async function checkOpenAICompatQuota(apiKey: string, provider: AIProvider): Promise<QuotaCheckResponse> {
+    const config = PROVIDER_CONFIG[provider];
+    if (!config?.baseUrl || !config.models[0]) {
+        return { isValid: false, checkedAt: new Date().toISOString(), error: 'No baseUrl or models configured' };
+    }
+
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        };
+        if (provider === 'openrouter') {
+            headers['HTTP-Referer'] = 'https://freeapi-hub.vercel.app';
+            headers['X-Title'] = 'FreeAPI Hub';
+        }
+
+        const res = await fetch(config.baseUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model: config.models[0],
+                messages: [{ role: 'user', content: '.' }],
+                max_tokens: 1,
+            }),
+            signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        // Try to parse rate-limit headers (various naming conventions)
+        const limitReqs = parseHeaderInt(res.headers.get('x-ratelimit-limit-requests'))
+            ?? parseHeaderInt(res.headers.get('x-ratelimit-limit-requests-day'));
+        const remainReqs = parseHeaderInt(res.headers.get('x-ratelimit-remaining-requests'))
+            ?? parseHeaderInt(res.headers.get('x-ratelimit-remaining-requests-day'));
+        const limitTokens = parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens'))
+            ?? parseHeaderInt(res.headers.get('x-ratelimit-limit-tokens-day'));
+        const remainTokens = parseHeaderInt(res.headers.get('x-ratelimit-remaining-tokens'))
+            ?? parseHeaderInt(res.headers.get('x-ratelimit-remaining-tokens-day'));
+
+        if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+                return {
+                    isValid: false,
+                    checkedAt: new Date().toISOString(),
+                    error: 'Invalid API key',
+                };
+            }
+            if (res.status === 429) {
+                return {
+                    remainingRequests: 0,
+                    remainingTokens: 0,
+                    limitRequests: limitReqs || config.defaultLimits.rpd,
+                    limitTokens: limitTokens || config.defaultLimits.tpd,
+                    isValid: true,
+                    checkedAt: new Date().toISOString(),
+                };
+            }
+            // Other errors - key might still be valid
+            const errData = await res.json().catch(() => ({}));
+            return {
+                isValid: false,
+                checkedAt: new Date().toISOString(),
+                error: errData?.error?.message || `HTTP ${res.status}`,
+            };
+        }
+
+        return {
+            remainingRequests: remainReqs,
+            remainingTokens: remainTokens,
+            limitRequests: limitReqs || config.defaultLimits.rpd,
+            limitTokens: limitTokens || config.defaultLimits.tpd,
+            isValid: true,
+            checkedAt: new Date().toISOString(),
+        };
+    } catch (err) {
+        return {
+            isValid: false,
+            checkedAt: new Date().toISOString(),
+            error: err instanceof Error ? err.message : String(err),
+        };
+    }
+}
+
 function parseHeaderInt(value: string | null): number | undefined {
     if (!value) return undefined;
     const num = parseInt(value, 10);
@@ -474,6 +565,11 @@ export async function POST(request: NextRequest) {
                 break;
             case 'gemini':
                 result = await checkGeminiQuota(apiKey);
+                break;
+            case 'sambanova':
+            case 'openrouter':
+            case 'mistral':
+                result = await checkOpenAICompatQuota(apiKey, provider as AIProvider);
                 break;
             default:
                 result = {

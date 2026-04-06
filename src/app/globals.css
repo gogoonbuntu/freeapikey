@@ -23,6 +23,12 @@
   --groq-gradient: linear-gradient(135deg, #F55036, #FF8A65);
   --cerebras-color: #8B5CF6;
   --cerebras-gradient: linear-gradient(135deg, #8B5CF6, #A78BFA);
+  --sambanova-color: #FF6B00;
+  --sambanova-gradient: linear-gradient(135deg, #FF6B00, #FFB800);
+  --openrouter-color: #6366F1;
+  --openrouter-gradient: linear-gradient(135deg, #6366F1, #8B5CF6);
+  --mistral-color: #FF7000;
+  --mistral-gradient: linear-gradient(135deg, #FF7000, #FFB347);
 
   /* Accents */
   --accent-blue: #3b82f6;
@@ -248,7 +254,7 @@ body {
 /* === Grid === */
 .grid-3 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
 }
 
@@ -719,6 +725,9 @@ textarea.form-input {
 .provider-dot.gemini { background: var(--gemini-color); }
 .provider-dot.groq { background: var(--groq-color); }
 .provider-dot.cerebras { background: var(--cerebras-color); }
+.provider-dot.sambanova { background: var(--sambanova-color); }
+.provider-dot.openrouter { background: var(--openrouter-color); }
+.provider-dot.mistral { background: var(--mistral-color); }
 
 /* === Gauge Chart === */
 .gauge-container {
